@@ -13,7 +13,9 @@ import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
+import viva.la.circle.R
 import viva.la.circle.model.TargetAction
+import viva.la.circle.service.BlueLMInterceptorService
 import viva.la.circle.service.InterceptorStateRepository
 import viva.la.circle.ui.AssistantChooserActivity
 
@@ -182,10 +184,14 @@ object ActionExecutionEngine {
             TargetAction.CIRCLE_TO_SEARCH -> {
                 val ok = CircleToSearch.trigger(context)
                 if (!ok) {
-                    val blocker = CircleToSearch.probe(context).blocker
-                        ?: "Circle to Search did not start"
+                    val readiness = CircleToSearch.probe(context)
+                    val blocker = readiness.localizedBlocker(context)
+                        ?: context.getString(R.string.cts_not_ready)
                     Toast.makeText(context, blocker, Toast.LENGTH_LONG).show()
-                    InterceptorStateRepository.diag("CTS", "executeAction false: $blocker")
+                    InterceptorStateRepository.diag(
+                        "CTS",
+                        "executeAction false: ${readiness.blocker ?: "not ready"}",
+                    )
                 }
                 ok
             }
@@ -419,9 +425,37 @@ object ActionExecutionEngine {
      *
      * Do not lead with ACTION_VOICE_COMMAND: that is Google Voice Search, not the assist gesture.
      */
+    /**
+     * True when launching the OS default assistant would re-open an OEM assistant we intercept
+     * (Celia on Huawei, Copilot on Vivo). That is a hard loop: dismiss → assist gesture → same UI.
+     */
+    fun wouldLoopToInterceptedAssistant(
+        systemDefaultPackage: String?,
+        ownPackageName: String = "",
+    ): Boolean {
+        return BlueLMInterceptorService.isBlueLMOrVivoAssistant(
+            systemDefaultPackage,
+            null,
+            ownPackageName,
+        )
+    }
+
     fun launchDefaultAssistant(context: Context): Boolean {
         val (systemDefault, source) = resolveSystemDefaultAssistant(context)
         InterceptorStateRepository.diag("ACT", "default assistant = $systemDefault (via $source)")
+
+        if (wouldLoopToInterceptedAssistant(systemDefault, context.packageName)) {
+            InterceptorStateRepository.diag(
+                "ACT",
+                "refusing default-assistant loop: $systemDefault is intercepted",
+            )
+            Toast.makeText(
+                context,
+                "System default is the intercepted assistant. Pick a different action.",
+                Toast.LENGTH_LONG,
+            ).show()
+            return openAssistantChooser(context)
+        }
 
         if (invokeSystemAssistGesture(context)) {
             return true
@@ -493,7 +527,7 @@ object ActionExecutionEngine {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             }
             val resolved = intent.resolveActivity(context.packageManager)
-            if (isAssistDisambiguation(resolved?.packageName, resolved?.className)) {
+            if (!resolvesToRealActivity(resolved?.packageName, resolved?.className)) {
                 InterceptorStateRepository.diag(
                     "ACT",
                     "ACTION_ASSIST resolves to disambiguation ${resolved?.flattenToShortString()}, skip",
@@ -517,8 +551,15 @@ object ActionExecutionEngine {
         val pkg = packageName.orEmpty()
         val cls = className.orEmpty()
         return pkg.contains("intentresolver", ignoreCase = true) ||
+            pkg.equals("com.huawei.android.internal.app", ignoreCase = true) ||
             cls.contains("ResolverActivity") ||
             cls.contains("ChooserActivity")
+    }
+
+    /** EMUI answers unresolved implicit intents with HwResolverActivity, not null. */
+    fun resolvesToRealActivity(packageName: String?, className: String?): Boolean {
+        if (packageName.isNullOrBlank()) return false
+        return !isAssistDisambiguation(packageName, className)
     }
 
     /** Shows the assistant picker. Never falls back to [launchDefaultAssistant], to avoid a cycle. */
@@ -666,15 +707,20 @@ object ActionExecutionEngine {
 
         // Last resort. On a device with Google services this usually answers Google whether or
         // not the user picked it, so it is reported distinctly rather than trusted silently.
-        val resolved = try {
+        val resolvedInfo = try {
             context.packageManager.resolveActivity(
                 Intent(Intent.ACTION_ASSIST),
                 PackageManager.MATCH_DEFAULT_ONLY,
-            )?.activityInfo?.packageName
+            )
         } catch (_: Exception) {
             null
         }
-        return resolved to "resolveActivity(ACTION_ASSIST)"
+        val resolvedPkg = resolvedInfo?.activityInfo?.packageName
+        val resolvedCls = resolvedInfo?.activityInfo?.name
+        if (!resolvesToRealActivity(resolvedPkg, resolvedCls)) {
+            return null to "resolveActivity(ACTION_ASSIST)"
+        }
+        return resolvedPkg to "resolveActivity(ACTION_ASSIST)"
     }
 
     fun parseAssistantComponent(raw: String?): String? {

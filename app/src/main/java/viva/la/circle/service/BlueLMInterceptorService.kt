@@ -11,8 +11,10 @@ import android.os.PowerManager
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import viva.la.circle.engine.ActionExecutionEngine
 import viva.la.circle.engine.CircleToSearch
+import viva.la.circle.engine.VendorProfile
 import viva.la.circle.model.TargetAction
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -49,6 +51,10 @@ class BlueLMInterceptorService : AccessibilityService() {
     @Volatile
     private var foregroundPackage: String? = null
 
+    /** Last non-assistant activity package — the app the user was in before Celia/Copilot. */
+    @Volatile
+    private var lastUserForegroundPackage: String? = null
+
     @Volatile
     private var foregroundSinceMs: Long = 0L
 
@@ -60,6 +66,7 @@ class BlueLMInterceptorService : AccessibilityService() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == Intent.ACTION_SCREEN_OFF) {
                 foregroundPackage = null
+                lastUserForegroundPackage = null
                 foregroundSinceMs = 0L
                 pendingSingleActionJob?.cancel()
                 pendingSingleActionJob = null
@@ -113,14 +120,9 @@ class BlueLMInterceptorService : AccessibilityService() {
         /** Vivo Copilot is bound to long-press power. Fire before the ROM opens it. */
         const val POWER_LONG_PRESS_MS = 500L
 
-        val KNOWN_PACKAGES = setOf(
-            "com.vivo.agent",
-            "com.vivo.vpa",
-            "com.bbk.voiceassistant",
-            "com.vivo.ai.copilot",
-            "com.vivo.blue.assistant",
-            "com.vivo.bluelm",
-        )
+        /** Union of every vendor profile's assistant packages. Kept as a property for tests. */
+        val KNOWN_PACKAGES: Set<String>
+            get() = VendorProfile.ALL.flatMap { it.assistantPackages }.toSet()
 
         val KNOWN_CAMERA_PACKAGES = setOf(
             "com.vivo.camera",
@@ -128,6 +130,7 @@ class BlueLMInterceptorService : AccessibilityService() {
             "com.vivo.media.camera",
             "com.android.camera2",
             "com.google.android.googlecamera",
+            "com.huawei.camera",
             "com.meizu.media.camera",
             "com.oppo.camera",
             "com.oneplus.camera",
@@ -162,11 +165,9 @@ class BlueLMInterceptorService : AccessibilityService() {
                 return true
             }
 
-            return pkg.contains("bluelm") ||
-                pkg.contains("jovi") ||
-                pkg.contains("vivoassistant") ||
-                pkg.contains("bbk.voiceassistant") ||
-                (pkg.contains("vivo") && pkg.contains("agent"))
+            // Vivo keeps its compound rule; everything else comes from the vendor profiles.
+            if (pkg.contains("vivo") && pkg.contains("agent")) return true
+            return VendorProfile.matchesAnyAssistant(pkg)
         }
 
         /**
@@ -176,13 +177,7 @@ class BlueLMInterceptorService : AccessibilityService() {
         fun isCopilotSecondaryUi(className: String?): Boolean {
             val cls = className.orEmpty()
             if (cls.isEmpty()) return false
-            return cls.contains(".settings.") ||
-                cls.contains("circletosearch") ||
-                cls.contains(".photos.ui") ||
-                cls.contains("PrivacyPolicy") ||
-                cls.contains("UserPolicy") ||
-                cls.contains("AboutActivity") ||
-                cls.contains("FeedBackDialog")
+            return VendorProfile.matchesAnySecondaryUi(cls)
         }
 
         fun isCopilotWakeUi(packageName: String?, className: String?, ownPackageName: String = ""): Boolean {
@@ -190,12 +185,72 @@ class BlueLMInterceptorService : AccessibilityService() {
             return !isCopilotSecondaryUi(className)
         }
 
-        fun containsCopilotWindow(packageNames: List<String?>, ownPackage: String): Boolean =
-            packageNames.any { isBlueLMOrVivoAssistant(it, null, ownPackage) }
-
-        fun copilotDismissBackBudget(action: TargetAction): Int {
-            return if (action == TargetAction.HWCTS) HWCTS_DISMISS_BACKS else MAX_DISMISS_BACKS
+        /**
+         * True when the *top* window (first non-empty entry) is an intercepted assistant.
+         * A closing overlay that is still somewhere in the list must not count — that is what
+         * caused extra BACKs to fall through into the user's app on Huawei.
+         */
+        fun containsCopilotWindow(packageNames: List<String?>, ownPackage: String): Boolean {
+            val top = packageNames.firstOrNull { !it.isNullOrEmpty() }
+            return isBlueLMOrVivoAssistant(top, null, ownPackage)
         }
+
+        fun isAssistantTopWindow(topPackage: String?, ownPackage: String): Boolean =
+            isBlueLMOrVivoAssistant(topPackage, null, ownPackage)
+
+        /**
+         * Stop BACKs once the top window is known and is not the assistant.
+         * Covers both "user app restored" and "overshot into launcher".
+         */
+        fun shouldStopDismissBacks(
+            topPackage: String?,
+            @Suppress("UNUSED_PARAMETER") preAssistPackage: String?,
+            ownPackage: String,
+        ): Boolean {
+            if (topPackage.isNullOrBlank()) return false
+            return !isBlueLMOrVivoAssistant(topPackage, null, ownPackage)
+        }
+
+        fun isDismissOvershoot(
+            topPackage: String?,
+            preAssistPackage: String?,
+            ownPackage: String,
+        ): Boolean {
+            if (topPackage.isNullOrBlank()) return false
+            if (isBlueLMOrVivoAssistant(topPackage, null, ownPackage)) return false
+            if (preAssistPackage != null &&
+                topPackage.equals(preAssistPackage, ignoreCase = true)
+            ) {
+                return false
+            }
+            return true
+        }
+
+        fun copilotDismissBackBudget(
+            action: TargetAction,
+            profile: VendorProfile = VendorProfile.current(),
+        ): Int {
+            return if (action == TargetAction.HWCTS) HWCTS_DISMISS_BACKS else profile.maxDismissBacks
+        }
+
+        fun assistantDismissTimeoutMs(profile: VendorProfile = VendorProfile.current()): Long =
+            profile.dismissTimeoutMs
+
+        fun assistantPollMs(profile: VendorProfile = VendorProfile.current()): Long =
+            profile.pollMs
+
+        fun assistantHammerMinIntervalMs(profile: VendorProfile = VendorProfile.current()): Long =
+            profile.hammerMinIntervalMs
+
+        fun assistantFocusWaitTimeoutMs(profile: VendorProfile = VendorProfile.current()): Long =
+            profile.focusWaitTimeoutMs
+
+        fun assistantFocusPollMs(profile: VendorProfile = VendorProfile.current()): Long =
+            profile.focusPollMs
+
+        /** BACK only while the assistant is the top window — never at the app underneath. */
+        fun shouldPressDismissBack(topPackage: String?, ownPackage: String): Boolean =
+            isAssistantTopWindow(topPackage, ownPackage)
 
         fun shouldWaitUntilCopilotGone(action: TargetAction): Boolean {
             return action != TargetAction.HWCTS
@@ -208,11 +263,13 @@ class BlueLMInterceptorService : AccessibilityService() {
             elapsedSinceLastBackMs: Long,
             maxBacks: Int = MAX_DISMISS_BACKS,
             minIntervalMs: Long = COPILOT_HAMMER_MIN_INTERVAL_MS,
+            /** First BACK after a wake event: presence is already proven by the event. */
+            assumePresent: Boolean = false,
         ): Boolean {
             if (actionLaunched) return false
             if (backPressCount >= maxBacks) return false
-            if (!copilotPresent) return false
-            if (elapsedSinceLastBackMs < minIntervalMs) return false
+            if (!assumePresent && !copilotPresent) return false
+            if (backPressCount > 0 && elapsedSinceLastBackMs < minIntervalMs) return false
             return true
         }
 
@@ -233,7 +290,16 @@ class BlueLMInterceptorService : AccessibilityService() {
             if (cls.startsWith("android.widget.")) return false
             if (cls.startsWith("android.view.")) return false
             if (cls.startsWith("android.inputmethodservice.")) return false
+            if (cls.endsWith("Service")) return false
             return true
+        }
+
+        /**
+         * Positive foreground test: a real app window, not overlays / recorders / IME.
+         * Class-name blocklists lose (upslide, smartshot, screenrecorder).
+         */
+        fun isForegroundAppWindow(windowType: Int?, isActive: Boolean?): Boolean {
+            return windowType == AccessibilityWindowInfo.TYPE_APPLICATION && isActive == true
         }
 
         fun isCameraShutterKey(keyCode: Int, extraKeyCodes: Set<Int> = emptySet()): Boolean {
@@ -523,9 +589,18 @@ class BlueLMInterceptorService : AccessibilityService() {
         val packageName = event.packageName?.toString() ?: return
         val className = event.className?.toString() ?: ""
         val now = System.currentTimeMillis()
-        if (isLikelyActivityWindow(className) && packageName != foregroundPackage) {
+        val eventWin = eventWindow(event)
+        val isFgApp = if (eventWin != null) {
+            isForegroundAppWindow(eventWin.type, eventWin.isActive)
+        } else {
+            isLikelyActivityWindow(className)
+        }
+        if (isFgApp && packageName != foregroundPackage) {
             foregroundPackage = packageName
             foregroundSinceMs = now
+            if (!isBlueLMOrVivoAssistant(packageName, className, ownPkg)) {
+                lastUserForegroundPackage = packageName
+            }
             InterceptorStateRepository.diag("FG", "pkg=$packageName cls=$className")
         }
 
@@ -547,6 +622,7 @@ class BlueLMInterceptorService : AccessibilityService() {
             lastBlueLMInterceptMs = now
             blueLMActionLaunched = false
             backPressCount = 0
+            val preAssistPackage = lastUserForegroundPackage
             InterceptorStateRepository.recordInterception(packageName, now)
             if (!sawPowerKeyThisSession && !loggedMissingPowerKey) {
                 loggedMissingPowerKey = true
@@ -558,25 +634,98 @@ class BlueLMInterceptorService : AccessibilityService() {
             InterceptorStateRepository.diag(
                 "BLM",
                 "copilot wake overlay=${!isLikelyActivityWindow(className)} " +
-                    "action=${state.blueLMAction} pkg=$packageName cls=$className",
+                    "action=${state.blueLMAction} pkg=$packageName cls=$className " +
+                    "preAssist=${preAssistPackage ?: "-"}",
             )
 
             pendingBlueLMLaunchJob?.cancel()
             pendingBlueLMLaunchJob = serviceScope.launch {
                 try {
-                    val backBudget = copilotDismissBackBudget(state.blueLMAction)
-                    if (backBudget > 0) {
-                        dismissCopilotBack("initial", backBudget)
+                    val profile = VendorProfile.current()
+                    val backBudget = copilotDismissBackBudget(state.blueLMAction, profile)
+                    val pollMs = assistantPollMs(profile)
+                    val hammerMs = assistantHammerMinIntervalMs(profile)
+                    val focusWaitMs = assistantFocusWaitTimeoutMs(profile)
+                    val focusPollMs = assistantFocusPollMs(profile)
+
+                    // Wait until the assistant is top, then BACK. assumePresent still skips a
+                    // second full window walk — it must not skip the top-window condition.
+                    var assistantBecameTop = false
+                    val focusDeadline = System.currentTimeMillis() + focusWaitMs
+                    while (System.currentTimeMillis() <= focusDeadline) {
+                        val snap = windowSnapshot()
+                        InterceptorStateRepository.diag(
+                            "BLM",
+                            "focus windows=[${snap.packages.joinToString()}] " +
+                                "top=${snap.topPackage ?: "-"}",
+                        )
+                        if (shouldPressDismissBack(snap.topPackage, ownPkg)) {
+                            assistantBecameTop = true
+                            if (backBudget > 0) {
+                                dismissCopilotBack(
+                                    reason = "initial",
+                                    maxBacks = backBudget,
+                                    minIntervalMs = hammerMs,
+                                    assumePresent = true,
+                                    knownTopPackage = snap.topPackage,
+                                    knownPackages = snap.packages,
+                                )
+                            }
+                            break
+                        }
+                        if (System.currentTimeMillis() + focusPollMs > focusDeadline) break
+                        delay(focusPollMs.milliseconds)
                     }
-                    if (shouldWaitUntilCopilotGone(state.blueLMAction)) {
-                        val deadline = System.currentTimeMillis() + COPILOT_DISMISS_TIMEOUT_MS
+                    if (!assistantBecameTop) {
+                        InterceptorStateRepository.diag(
+                            "BLM",
+                            "assistant never top within ${focusWaitMs}ms, skip BACK",
+                        )
+                    } else if (shouldWaitUntilCopilotGone(state.blueLMAction)) {
+                        val deadline = System.currentTimeMillis() + assistantDismissTimeoutMs(profile)
                         while (System.currentTimeMillis() < deadline) {
-                            delay(COPILOT_POLL_MS.milliseconds)
-                            if (!copilotWindowPresent()) break
-                            dismissCopilotBack("poll", backBudget)
+                            delay(pollMs.milliseconds)
+                            val snap = windowSnapshot()
+                            InterceptorStateRepository.diag(
+                                "BLM",
+                                "poll windows=[${snap.packages.joinToString()}] " +
+                                    "top=${snap.topPackage ?: "-"}",
+                            )
+                            if (isDismissOvershoot(snap.topPackage, preAssistPackage, ownPkg)) {
+                                InterceptorStateRepository.diag(
+                                    "BLM",
+                                    "stop BACK: overshoot top=${snap.topPackage} " +
+                                        "preAssist=${preAssistPackage ?: "-"}",
+                                )
+                                break
+                            }
+                            if (!shouldPressDismissBack(snap.topPackage, ownPkg)) {
+                                InterceptorStateRepository.diag(
+                                    "BLM",
+                                    "stop BACK: assistant gone top=${snap.topPackage ?: "-"}",
+                                )
+                                break
+                            }
+                            dismissCopilotBack(
+                                reason = "poll",
+                                maxBacks = backBudget,
+                                minIntervalMs = hammerMs,
+                                assumePresent = true,
+                                knownTopPackage = snap.topPackage,
+                                knownPackages = snap.packages,
+                            )
                         }
                         val settleMs = CircleToSearch.extraSettleMs(state.blueLMAction)
                         if (settleMs > 0) delay(settleMs.milliseconds)
+                    }
+
+                    val endSnap = windowSnapshot()
+                    if (isAssistantTopWindow(endSnap.topPackage, ownPkg)) {
+                        InterceptorStateRepository.diag(
+                            "BLM",
+                            "assistant still top after $backPressCount backs " +
+                                "top=${endSnap.topPackage}",
+                        )
                     }
                     fireBlueLMAction(state)
                 } finally {
@@ -586,57 +735,124 @@ class BlueLMInterceptorService : AccessibilityService() {
         }
     }
 
-    private fun copilotWindowPresent(): Boolean =
-        containsCopilotWindow(windowPackageNames(), ownPackageName())
+    private data class WindowSnapshot(
+        val topPackage: String?,
+        val packages: List<String?>,
+    )
 
-    private fun windowPackageNames(): List<String?> {
-        val names = mutableListOf<String?>()
+    /**
+     * Prefer the active/focused window's package (one binder call). Fall back to scanning
+     * application windows only — never walk every root on the hot path unless needed for logs.
+     */
+    private fun windowSnapshot(): WindowSnapshot {
         val wins = try {
             windows
         } catch (_: Exception) {
-            return names
+            return WindowSnapshot(null, emptyList())
         }
-        for (window in wins) {
-            var root: AccessibilityNodeInfo? = null
-            try {
-                root = window.root
-                names.add(root?.packageName?.toString())
-            } catch (_: Exception) {
-                names.add(null)
-            } finally {
-                @Suppress("DEPRECATION")
-                try {
-                    root?.recycle()
-                } catch (_: Exception) {
+        if (wins.isNullOrEmpty()) return WindowSnapshot(null, emptyList())
+
+        val ordered = buildList<AccessibilityWindowInfo> {
+            wins.firstOrNull { it.isActive }?.let { add(it) }
+            wins.firstOrNull { candidate ->
+                candidate.isFocused && none { existing -> existing === candidate }
+            }?.let { add(it) }
+            wins.forEach { candidate ->
+                val interesting =
+                    candidate.type == AccessibilityWindowInfo.TYPE_APPLICATION ||
+                        candidate.type == AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY ||
+                        candidate.type == AccessibilityWindowInfo.TYPE_SYSTEM
+                if (interesting && none { existing -> existing === candidate }) {
+                    add(candidate)
                 }
             }
         }
-        return names
+
+        val packages = mutableListOf<String?>()
+        for (window in ordered) {
+            packages.add(packageFromWindow(window))
+        }
+        val top = packages.firstOrNull { !it.isNullOrEmpty() }
+        return WindowSnapshot(topPackage = top, packages = packages)
     }
 
-    private fun topWindowPackage(): String? =
-        windowPackageNames().firstOrNull { !it.isNullOrEmpty() }
+    private fun packageFromWindow(window: AccessibilityWindowInfo?): String? {
+        if (window == null) return null
+        var root: AccessibilityNodeInfo? = null
+        return try {
+            root = window.root
+            root?.packageName?.toString()
+        } catch (_: Exception) {
+            null
+        } finally {
+            @Suppress("DEPRECATION")
+            try {
+                root?.recycle()
+            } catch (_: Exception) {
+            }
+        }
+    }
 
-    private fun dismissCopilotBack(reason: String, maxBacks: Int = MAX_DISMISS_BACKS): Boolean {
+    private fun eventWindow(event: AccessibilityEvent): AccessibilityWindowInfo? {
+        val id = event.windowId
+        if (id < 0) return null
+        return try {
+            windows?.firstOrNull { it.id == id }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun topWindowPackage(): String? = windowSnapshot().topPackage
+
+    private fun dismissCopilotBack(
+        reason: String,
+        maxBacks: Int = MAX_DISMISS_BACKS,
+        minIntervalMs: Long = COPILOT_HAMMER_MIN_INTERVAL_MS,
+        assumePresent: Boolean = false,
+        knownTopPackage: String? = null,
+        knownPackages: List<String?>? = null,
+    ): Boolean {
         val now = System.currentTimeMillis()
-        val present = copilotWindowPresent()
+        val snap = when {
+            knownTopPackage != null || knownPackages != null -> WindowSnapshot(
+                topPackage = knownTopPackage ?: knownPackages?.firstOrNull { !it.isNullOrEmpty() },
+                packages = knownPackages.orEmpty(),
+            )
+            assumePresent -> null
+            else -> windowSnapshot()
+        }
+        val present = assumePresent || isAssistantTopWindow(snap?.topPackage, ownPackageName())
         if (!canDismissCopilotBack(
                 actionLaunched = blueLMActionLaunched,
                 backPressCount = backPressCount,
                 copilotPresent = present,
                 elapsedSinceLastBackMs = now - lastCopilotHammerMs,
                 maxBacks = maxBacks,
+                minIntervalMs = minIntervalMs,
+                assumePresent = assumePresent,
             )
         ) {
-            if (!present) {
-                InterceptorStateRepository.diag("BLM", "skip BACK ($reason): copilot gone")
+            if (!present && !assumePresent) {
+                InterceptorStateRepository.diag(
+                    "BLM",
+                    "skip BACK ($reason): assistant not top top=${snap?.topPackage ?: "-"}",
+                )
             }
             return false
         }
         lastCopilotHammerMs = now
         backPressCount++
         val backOk = performGlobalAction(GLOBAL_ACTION_BACK)
-        InterceptorStateRepository.diag("BLM", "BACK=$backOk reason=$reason count=$backPressCount")
+        val windowsDetail = when {
+            assumePresent -> "assumePresent=true"
+            snap != null -> "windows=[${snap.packages.joinToString()}] top=${snap.topPackage ?: "-"}"
+            else -> ""
+        }
+        InterceptorStateRepository.diag(
+            "BLM",
+            "BACK=$backOk reason=$reason count=$backPressCount $windowsDetail".trim(),
+        )
         return backOk
     }
 

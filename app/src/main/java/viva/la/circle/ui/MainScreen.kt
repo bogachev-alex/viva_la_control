@@ -58,6 +58,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -65,10 +66,12 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import viva.la.circle.R
 import viva.la.circle.engine.ActionExecutionEngine
 import viva.la.circle.engine.AppInfo
 import viva.la.circle.engine.AssistantAppInfo
 import viva.la.circle.engine.CircleToSearch
+import viva.la.circle.engine.HuaweiPowerManagement
 import viva.la.circle.model.TargetAction
 import viva.la.circle.service.DiagEvent
 import viva.la.circle.service.InterceptorServiceState
@@ -98,6 +101,7 @@ fun MainScreen(
     onRemoveCapturedKey: (Int) -> Unit = {},
     onCopyDiagnostics: () -> Unit = {},
     onClearDiagnostics: () -> Unit = {},
+    onAcknowledgeHuaweiAppLaunch: () -> Unit = {},
     diagEvents: List<DiagEvent> = emptyList(),
 ) {
     val scrollState = rememberScrollState()
@@ -119,7 +123,7 @@ fun MainScreen(
                             modifier = Modifier.padding(end = 8.dp),
                         )
                         Text(
-                            text = "Viva la Circle",
+                            text = stringResource(R.string.app_name),
                             fontWeight = FontWeight.Bold,
                             fontSize = 20.sp,
                         )
@@ -145,6 +149,10 @@ fun MainScreen(
                 state = state,
                 onOpenSettingsClick = onOpenSettingsClick,
             )
+
+            if (HuaweiPowerManagement.isHuaweiDevice() && !state.huaweiAppLaunchAcknowledged) {
+                HuaweiBatteryWhitelistCard(onAlreadyConfigured = onAcknowledgeHuaweiAppLaunch)
+            }
 
             // 2. Target Action Configuration Section
             TargetActionConfigCard(
@@ -229,12 +237,12 @@ fun StatusBannerCard(
     }
 
     val icon = if (isActive) AppIcons.CheckCircle else AppIcons.Warning
-    val statusTitle = if (isActive) "Service Active" else "Service Inactive"
-    val statusDescription = if (isActive) {
-        "Viva la Circle is enabled in System Settings and ready to launch configured action when triggers occur."
-    } else {
-        "Accessibility Service permission is required to detect Vivo BlueLM launch events and redirect them to your chosen assistant."
-    }
+    val statusTitle = stringResource(
+        if (isActive) R.string.service_active else R.string.service_inactive,
+    )
+    val statusDescription = stringResource(
+        if (isActive) R.string.service_active_description else R.string.service_inactive_description,
+    )
 
     Card(
         colors = CardDefaults.cardColors(
@@ -279,7 +287,13 @@ fun StatusBannerCard(
                         color = contentColor,
                     )
                     Text(
-                        text = if (state.isRunning) "Process Running" else if (isActive) "Waiting for trigger" else "Action Required",
+                        text = stringResource(
+                            when {
+                                state.isRunning -> R.string.process_running
+                                isActive -> R.string.waiting_for_trigger
+                                else -> R.string.action_required
+                            },
+                        ),
                         style = MaterialTheme.typography.labelMedium,
                         color = contentColor.copy(alpha = 0.8f),
                     )
@@ -290,7 +304,9 @@ fun StatusBannerCard(
                     shape = RoundedCornerShape(12.dp),
                 ) {
                     Text(
-                        text = if (isActive) "ACTIVE" else "DISABLED",
+                        text = stringResource(
+                            if (isActive) R.string.badge_active else R.string.badge_disabled,
+                        ),
                         color = Color.White,
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
@@ -321,7 +337,9 @@ fun StatusBannerCard(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (isActive) "Manage Accessibility Settings" else "Enable in Accessibility Settings",
+                    text = stringResource(
+                        if (isActive) R.string.manage_accessibility else R.string.enable_accessibility,
+                    ),
                     fontWeight = FontWeight.SemiBold,
                 )
             }
@@ -365,7 +383,7 @@ fun TargetActionConfigCard(
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = "Target Action Settings",
+                    text = stringResource(R.string.target_action_settings),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                 )
@@ -373,7 +391,7 @@ fun TargetActionConfigCard(
 
             // BlueLM Power Button Interception Action
             Text(
-                text = "BlueLM Button Trigger Action",
+                text = stringResource(R.string.bluelm_trigger_action),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Bold,
@@ -395,12 +413,12 @@ fun TargetActionConfigCard(
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "Launch delay after dismiss: ${state.dismissDelayMs} ms",
+                    text = stringResource(R.string.launch_delay_after_dismiss, state.dismissDelayMs),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    text = "BACK hides Copilot immediately and keeps dismissing the OriginOS 5 float overlay while this wait runs. Then the action (Gemini) fires. Copilot still starts — the ROM does not give us the power key — but it should not stay on screen.",
+                    text = stringResource(R.string.launch_delay_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -416,7 +434,7 @@ fun TargetActionConfigCard(
 
             // Camera Key Interception Action
             Text(
-                text = "Camera Key Trigger Action",
+                text = stringResource(R.string.camera_trigger_action),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Bold,
@@ -437,12 +455,12 @@ fun TargetActionConfigCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Don't intercept in camera apps",
+                        text = stringResource(R.string.dont_intercept_in_camera),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        text = "Skip the shutter only if a camera app has already been in the foreground for 1.2s. Double-press still opens the camera (KEYCODE_DOUBLE_CLICK is not consumed).",
+                        text = stringResource(R.string.dont_intercept_in_camera_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -455,7 +473,7 @@ fun TargetActionConfigCard(
 
             if (state.cameraKeyCodes.isNotEmpty()) {
                 Text(
-                    text = "Learned camera keys",
+                    text = stringResource(R.string.learned_camera_keys),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -470,7 +488,7 @@ fun TargetActionConfigCard(
                             modifier = Modifier.weight(1f),
                         )
                         TextButton(onClick = { onRemoveCapturedKey(code) }) {
-                            Text("Remove")
+                            Text(stringResource(R.string.remove))
                         }
                     }
                 }
@@ -482,13 +500,15 @@ fun TargetActionConfigCard(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
-                    text = if (state.captureMode) "Stop key capture" else "Capture next key press",
+                    text = stringResource(
+                        if (state.captureMode) R.string.stop_key_capture else R.string.capture_next_key,
+                    ),
                     fontWeight = FontWeight.SemiBold,
                 )
             }
             if (state.captureMode) {
                 Text(
-                    text = "Capture is armed. Press the shutter half-way, full press, and grip if you use one. Nothing is consumed while capturing.",
+                    text = stringResource(R.string.capture_armed_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -508,7 +528,7 @@ fun TargetActionConfigCard(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Test Selected Action Now",
+                    text = stringResource(R.string.test_selected_action),
                     fontWeight = FontWeight.SemiBold,
                 )
             }
@@ -571,16 +591,16 @@ fun ActionSelectorList(
                         Spacer(modifier = Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = action.title,
+                                text = stringResource(action.titleRes),
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                             )
                             Text(
                                 text = if (action == TargetAction.DEFAULT_ASSISTANT && systemDefaultLabel != null) {
-                                    "Currently the system default: $systemDefaultLabel"
+                                    stringResource(R.string.currently_system_default, systemDefaultLabel)
                                 } else {
-                                    action.description
+                                    stringResource(action.descriptionRes)
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -598,7 +618,11 @@ fun ActionSelectorList(
                                 .padding(start = 36.dp),
                         ) {
                             Text(
-                                text = if (!selectedSpecificPkg.isNullOrEmpty()) "App: $selectedSpecificPkg" else "No app selected",
+                                text = if (!selectedSpecificPkg.isNullOrEmpty()) {
+                                    stringResource(R.string.app_selected, selectedSpecificPkg)
+                                } else {
+                                    stringResource(R.string.no_app_selected)
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.primary,
@@ -609,7 +633,13 @@ fun ActionSelectorList(
                                 shape = RoundedCornerShape(8.dp),
                             ) {
                                 Text(
-                                    text = if (!selectedSpecificPkg.isNullOrEmpty()) "Change App" else "Select App",
+                                    text = stringResource(
+                                        if (!selectedSpecificPkg.isNullOrEmpty()) {
+                                            R.string.change_app
+                                        } else {
+                                            R.string.select_app
+                                        },
+                                    ),
                                     fontSize = 12.sp,
                                 )
                             }
@@ -619,6 +649,32 @@ fun ActionSelectorList(
                     if (action == TargetAction.CIRCLE_TO_SEARCH && isSelected) {
                         Spacer(modifier = Modifier.height(8.dp))
                         CircleToSearchGate(modifier = Modifier.padding(start = 36.dp))
+                    }
+
+                    if (action == TargetAction.HWCTS && isSelected) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        HwctsGate(modifier = Modifier.padding(start = 36.dp))
+                    }
+
+                    if (action == TargetAction.DEFAULT_ASSISTANT && isSelected) {
+                        val loopPkg = remember {
+                            ActionExecutionEngine.resolveSystemDefaultAssistant(context).first
+                        }
+                        if (loopPkg != null &&
+                            ActionExecutionEngine.wouldLoopToInterceptedAssistant(
+                                loopPkg,
+                                context.packageName,
+                            )
+                        ) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = stringResource(R.string.default_assistant_loop_warning, loopPkg),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(start = 36.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -660,14 +716,14 @@ fun InstalledAssistantsCard(
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = "Detected Voice Assistants",
+                    text = stringResource(R.string.detected_voice_assistants),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                 )
             }
 
             Text(
-                text = "Voice assistant apps installed on your device that can be launched when BlueLM is intercepted:",
+                text = stringResource(R.string.detected_voice_assistants_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -730,7 +786,7 @@ fun AssistantStatusItem(
                     shape = RoundedCornerShape(8.dp),
                 ) {
                     Text(
-                        text = "Default",
+                        text = stringResource(R.string.badge_default),
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
@@ -758,7 +814,7 @@ fun AssistantStatusItem(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "Installed",
+                            text = stringResource(R.string.badge_installed),
                             color = Color(0xFF2E7D32),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
@@ -771,7 +827,7 @@ fun AssistantStatusItem(
                     shape = RoundedCornerShape(8.dp),
                 ) {
                     Text(
-                        text = "Not Installed",
+                        text = stringResource(R.string.badge_not_installed),
                         color = MaterialTheme.colorScheme.outline,
                         style = MaterialTheme.typography.labelSmall,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -810,7 +866,7 @@ fun AppPickerDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "Select Specific App",
+                text = stringResource(R.string.select_specific_app),
                 fontWeight = FontWeight.Bold,
             )
         },
@@ -824,7 +880,7 @@ fun AppPickerDialog(
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search installed apps...") },
+                    placeholder = { Text(stringResource(R.string.search_installed_apps)) },
                     leadingIcon = {
                         Icon(imageVector = AppIcons.Search, contentDescription = null)
                     },
@@ -852,7 +908,7 @@ fun AppPickerDialog(
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(
-                                text = "No apps found matching search.",
+                                text = stringResource(R.string.no_apps_matching_search),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -873,7 +929,7 @@ fun AppPickerDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.cancel))
             }
         },
     )
@@ -953,12 +1009,12 @@ fun DiagnosticsCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Diagnostics",
+                        text = stringResource(R.string.diagnostics),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = "In-app log. This ROM's logcat is silent, so capture lives here.",
+                        text = stringResource(R.string.diagnostics_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -978,7 +1034,7 @@ fun DiagnosticsCard(
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 Text(
-                    text = "Assistant resolution",
+                    text = stringResource(R.string.assistant_resolution),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
@@ -995,20 +1051,22 @@ fun DiagnosticsCard(
             if (state.diagnosticsEnabled || state.captureMode) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { onCaptureModeChange(!state.captureMode) }) {
-                        Text(if (state.captureMode) "Stop capture" else "Capture keys")
+                        Text(
+                            stringResource(
+                                if (state.captureMode) R.string.stop_capture else R.string.capture_keys,
+                            ),
+                        )
                     }
-                    TextButton(onClick = onCopyDiagnostics) { Text("Copy") }
-                    TextButton(onClick = onClearDiagnostics) { Text("Clear") }
+                    TextButton(onClick = onCopyDiagnostics) { Text(stringResource(R.string.copy)) }
+                    TextButton(onClick = onClearDiagnostics) { Text(stringResource(R.string.clear)) }
                 }
 
                 val visible = events.takeLast(40).reversed()
                 if (visible.isEmpty()) {
                     Text(
-                        text = if (state.captureMode) {
-                            "Waiting for a key. Press the shutter."
-                        } else {
-                            "No events yet. Toggle the accessibility service or press a key."
-                        },
+                        text = stringResource(
+                            if (state.captureMode) R.string.waiting_for_key else R.string.no_diag_events,
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1038,7 +1096,7 @@ fun DiagnosticsCard(
                                 )
                                 if (event.kind == "KEY" && keyCode != null) {
                                     TextButton(onClick = { onUseCapturedKey(keyCode) }) {
-                                        Text("Use this key ($keyCode)")
+                                        Text(stringResource(R.string.use_this_key, keyCode))
                                     }
                                 }
                             }
@@ -1110,7 +1168,7 @@ fun StatisticsCard(
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = "Interception Statistics",
+                    text = stringResource(R.string.interception_statistics),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                 )
@@ -1121,13 +1179,15 @@ fun StatisticsCard(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 StatItem(
-                    label = "Total Intercepts",
+                    label = stringResource(R.string.total_intercepts),
                     value = state.interceptedCount.toString(),
                     modifier = Modifier.weight(1f),
                 )
                 StatItem(
-                    label = "Service State",
-                    value = if (state.isRunning) "Running" else "Stopped",
+                    label = stringResource(R.string.service_state),
+                    value = stringResource(
+                        if (state.isRunning) R.string.running else R.string.stopped,
+                    ),
                     valueColor = if (state.isRunning) Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
@@ -1138,13 +1198,16 @@ fun StatisticsCard(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 StatItem(
-                    label = "Last Intercept Time",
-                    value = formatTimestamp(state.lastInterceptedTime),
+                    label = stringResource(R.string.last_intercept_time),
+                    value = formatTimestamp(
+                        state.lastInterceptedTime,
+                        neverLabel = stringResource(R.string.never),
+                    ),
                     modifier = Modifier.weight(1f),
                 )
                 StatItem(
-                    label = "Last Intercepted Package",
-                    value = state.lastInterceptedPackage ?: "None yet",
+                    label = stringResource(R.string.last_intercepted_package),
+                    value = state.lastInterceptedPackage ?: stringResource(R.string.none_yet),
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -1190,7 +1253,7 @@ fun OnboardingSection(modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(
-            text = "Setup & How It Works",
+            text = stringResource(R.string.setup_how_it_works),
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(top = 8.dp),
@@ -1198,12 +1261,11 @@ fun OnboardingSection(modifier: Modifier = Modifier) {
 
         // Card A: Why Accessibility Permission is Needed
         InstructionCard(
-            title = "1. Why Accessibility Permission is Needed",
+            title = stringResource(R.string.onboarding_why_title),
             icon = AppIcons.HelpOutline,
         ) {
             Text(
-                text = "On Vivo X200 Ultra, long pressing the power button triggers Vivo's built-in BlueLM / Copilot assistant by default with no native option to remap it.\n\n" +
-                        "OriginOS 6 does not deliver KEYCODE_POWER to accessibility (camera shutter keys still arrive). Viva la Circle therefore watches for the Copilot window, dismisses it, and launches your chosen action.",
+                text = stringResource(R.string.onboarding_why_body),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1211,39 +1273,36 @@ fun OnboardingSection(modifier: Modifier = Modifier) {
 
         // Card B: Step-by-Step Enablement Guide
         InstructionCard(
-            title = "2. Step-by-Step Setup Guide",
+            title = stringResource(R.string.onboarding_setup_title),
             icon = AppIcons.List,
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 StepItem(
                     stepNumber = "1",
-                    text = "Tap 'Enable in Accessibility Settings' above to navigate to system settings.",
+                    text = stringResource(R.string.onboarding_step_1),
                 )
                 StepItem(
                     stepNumber = "2",
-                    text = "Scroll down to 'Downloaded Apps' or 'Installed Services' section.",
+                    text = stringResource(R.string.onboarding_step_2),
                 )
                 StepItem(
                     stepNumber = "3",
-                    text = "Find and select 'Viva la Circle' from the list.",
+                    text = stringResource(R.string.onboarding_step_3),
                 )
                 StepItem(
                     stepNumber = "4",
-                    text = "Turn on 'Use Viva la Circle' toggle and confirm system permissions.",
+                    text = stringResource(R.string.onboarding_step_4),
                 )
             }
         }
 
         // Card C: How Automatic Interception Works
         InstructionCard(
-            title = "3. How Interception Works",
+            title = stringResource(R.string.onboarding_how_title),
             icon = AppIcons.AutoAwesome,
         ) {
             Text(
-                text = "Once enabled, the service runs quietly in the background:\n\n" +
-                        "• OriginOS 6 does not give accessibility the power key, so Copilot still opens. The service dismisses that window, waits, then fires your BlueLM action.\n" +
-                        "• Short-press Power is unchanged (the ROM keeps it).\n" +
-                        "• Camera shutter remains a separate hardware-key intercept.",
+                text = stringResource(R.string.onboarding_how_body),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1339,8 +1398,8 @@ fun StepItem(
     }
 }
 
-fun formatTimestamp(timestampMs: Long): String {
-    if (timestampMs <= 0L) return "Never"
+fun formatTimestamp(timestampMs: Long, neverLabel: String = "Never"): String {
+    if (timestampMs <= 0L) return neverLabel
     val sdf = SimpleDateFormat("MMM dd, yyyy HH:mm:ss", Locale.getDefault())
     return sdf.format(Date(timestampMs))
 }
@@ -1386,6 +1445,124 @@ fun MainScreenDarkPreview() {
     }
 }
 
+@Composable
+fun HuaweiBatteryWhitelistCard(
+    onAlreadyConfigured: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    ElevatedCard(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f),
+        ),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = AppIcons.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(24.dp),
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = stringResource(R.string.huawei_allow_background),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            Text(
+                text = stringResource(R.string.huawei_allow_background_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(
+                onClick = {
+                    if (!HuaweiPowerManagement.openAppLaunchSettings(context)) {
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.huawei_open_app_launch_toast),
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                },
+                shape = RoundedCornerShape(8.dp),
+            ) {
+                Text(stringResource(R.string.huawei_open_app_launch), fontSize = 12.sp)
+            }
+            TextButton(onClick = onAlreadyConfigured) {
+                Text(stringResource(R.string.huawei_already_configured), fontSize = 12.sp)
+            }
+        }
+    }
+}
+
+@Composable
+fun HwctsGate(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val installed by produceState(initialValue = false) {
+        value = withContext(Dispatchers.IO) {
+            ActionExecutionEngine.isHwctsInstalled(context)
+        }
+    }
+    val accessibilityOn by produceState(initialValue = false, installed) {
+        value = withContext(Dispatchers.IO) {
+            ActionExecutionEngine.hwctsAccessibilityEnabled(
+                ActionExecutionEngine.enabledAccessibilityServices(context),
+            )
+        }
+    }
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        when {
+            !installed -> {
+                Text(
+                    text = stringResource(R.string.hwcts_not_installed),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                Text(
+                    text = stringResource(R.string.hwcts_not_installed_body),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            !accessibilityOn -> {
+                Text(
+                    text = stringResource(R.string.hwcts_a11y_off),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                Text(
+                    text = stringResource(R.string.hwcts_a11y_off_body),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            else -> {
+                Text(
+                    text = stringResource(R.string.hwcts_ready),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+    }
+}
+
 /** Human-readable app name for a package, falling back to the package name itself. */
 fun appLabelFor(context: android.content.Context, packageName: String): String {
     return try {
@@ -1421,7 +1598,7 @@ fun CircleToSearchGate(modifier: Modifier = Modifier) {
         val current = readiness
         if (current == null) {
             Text(
-                text = "Checking Google / assistant status…",
+                text = stringResource(R.string.cts_checking),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1429,10 +1606,11 @@ fun CircleToSearchGate(modifier: Modifier = Modifier) {
             Text(
                 text = when {
                     current.usable && current.googleIsAssistant ->
-                        "Ready. Google is the default assistant."
+                        stringResource(R.string.cts_ready_google)
                     current.usable ->
-                        "Ready. This ROM exposes Contextual Search, so the default assistant does not need to be Google."
-                    else -> current.blocker ?: "Circle to Search is not ready."
+                        stringResource(R.string.cts_ready_contextual)
+                    else -> current.localizedBlocker(context)
+                        ?: stringResource(R.string.cts_not_ready)
                 },
                 style = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.Medium,
@@ -1444,7 +1622,7 @@ fun CircleToSearchGate(modifier: Modifier = Modifier) {
             )
             if (!current.googleInstalled) {
                 Text(
-                    text = "Install the Google app, then set it as the default digital assistant.",
+                    text = stringResource(R.string.cts_install_google),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1455,19 +1633,18 @@ fun CircleToSearchGate(modifier: Modifier = Modifier) {
                         onClick = { startCircleToSearchIntent(context, settingsIntent) },
                         shape = RoundedCornerShape(8.dp),
                     ) {
-                        Text("Open assistant settings", fontSize = 12.sp)
+                        Text(stringResource(R.string.cts_open_assistant_settings), fontSize = 12.sp)
                     }
                 } else {
                     Text(
-                        text = "Settings → Apps → Default apps → Digital assistant → Google",
+                        text = stringResource(R.string.cts_assistant_settings_path),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
             Text(
-                text = "Set Autostart and No restrictions for Google in vivo battery settings. " +
-                    "Otherwise Circle to Search may appear only after you open Google by hand.",
+                text = stringResource(R.string.cts_battery_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1480,7 +1657,11 @@ fun startCircleToSearchIntent(context: android.content.Context, intent: Intent?)
     try {
         context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     } catch (e: Exception) {
-        Toast.makeText(context, "Could not open: ${e.message}", Toast.LENGTH_SHORT).show()
+        Toast.makeText(
+            context,
+            context.getString(R.string.could_not_open, e.message ?: ""),
+            Toast.LENGTH_SHORT,
+        ).show()
     }
 }
 
@@ -1492,30 +1673,47 @@ fun startCircleToSearchIntent(context: android.content.Context, intent: Intent?)
 @Composable
 fun WillLaunchSummary(action: TargetAction, specificPackage: String?) {
     val context = LocalContext.current
-    val summary = remember(action, specificPackage) {
-        when (action) {
-            TargetAction.NONE -> "Nothing — this trigger is disabled."
-            TargetAction.ASSISTANT_CHOOSER -> "The chooser menu, every time."
-            TargetAction.DEFAULT_ASSISTANT -> {
-                val pkg = ActionExecutionEngine.resolveSystemDefaultAssistant(context).first
-                if (pkg == null) {
-                    "The system default assistant (none is currently set)."
-                } else {
-                    "${appLabelFor(context, pkg)} — the system default, not a pick made here."
-                }
-            }
-            TargetAction.CIRCLE_TO_SEARCH -> "Google Circle to Search over the current screen."
-            TargetAction.HWCTS -> "HwCTS circle search on the current screen."
-            TargetAction.SPECIFIC_APP ->
-                if (specificPackage.isNullOrEmpty()) {
-                    "No app chosen yet — falls back to the system default assistant."
-                } else {
-                    appLabelFor(context, specificPackage)
-                }
-            TargetAction.FLASHLIGHT -> "Toggle the torch."
-            TargetAction.SCREENSHOT -> "Take a screenshot."
-            TargetAction.MUTE_TOGGLE -> "Toggle media mute."
+    val pkg = remember(action) {
+        if (action == TargetAction.DEFAULT_ASSISTANT) {
+            ActionExecutionEngine.resolveSystemDefaultAssistant(context).first
+        } else {
+            null
         }
+    }
+    val hwctsInstalled = remember(action) {
+        if (action == TargetAction.HWCTS) {
+            ActionExecutionEngine.isHwctsInstalled(context)
+        } else {
+            true
+        }
+    }
+    val summary = when (action) {
+        TargetAction.NONE -> stringResource(R.string.will_launch_none)
+        TargetAction.ASSISTANT_CHOOSER -> stringResource(R.string.will_launch_chooser)
+        TargetAction.DEFAULT_ASSISTANT -> when {
+            pkg == null ->
+                stringResource(R.string.will_launch_default_unset)
+            ActionExecutionEngine.wouldLoopToInterceptedAssistant(pkg, context.packageName) ->
+                stringResource(R.string.will_launch_default_blocked, pkg)
+            else ->
+                stringResource(
+                    R.string.will_launch_default_app,
+                    appLabelFor(context, pkg),
+                )
+        }
+        TargetAction.CIRCLE_TO_SEARCH -> stringResource(R.string.will_launch_cts)
+        TargetAction.HWCTS -> stringResource(
+            if (!hwctsInstalled) R.string.will_launch_hwcts_missing else R.string.will_launch_hwcts,
+        )
+        TargetAction.SPECIFIC_APP ->
+            if (specificPackage.isNullOrEmpty()) {
+                stringResource(R.string.will_launch_specific_unset)
+            } else {
+                appLabelFor(context, specificPackage)
+            }
+        TargetAction.FLASHLIGHT -> stringResource(R.string.will_launch_flashlight)
+        TargetAction.SCREENSHOT -> stringResource(R.string.will_launch_screenshot)
+        TargetAction.MUTE_TOGGLE -> stringResource(R.string.will_launch_mute)
     }
 
     Column(
@@ -1526,7 +1724,7 @@ fun WillLaunchSummary(action: TargetAction, specificPackage: String?) {
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text(
-            text = "Will launch: $summary",
+            text = stringResource(R.string.will_launch, summary),
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.SemiBold,
         )

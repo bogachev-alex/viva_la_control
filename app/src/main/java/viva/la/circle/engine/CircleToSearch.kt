@@ -7,6 +7,8 @@ import android.content.res.Resources
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import androidx.annotation.StringRes
+import viva.la.circle.R
 import viva.la.circle.model.TargetAction
 import viva.la.circle.service.InterceptorStateRepository
 
@@ -33,6 +35,17 @@ object CircleToSearch {
     ) {
         val usable: Boolean get() = serviceAvailable && googleInstalled &&
             (googleIsAssistant || !contextualSearchKey.isNullOrEmpty())
+
+        @get:StringRes
+        val blockerRes: Int? get() = when {
+            !serviceAvailable -> R.string.cts_blocker_service_unavailable
+            !googleInstalled -> R.string.cts_blocker_google_not_installed
+            !googleIsAssistant && contextualSearchKey.isNullOrEmpty() ->
+                R.string.cts_blocker_google_not_assistant
+            else -> null
+        }
+
+        /** English tag for diag logs; UI should use [localizedBlocker]. */
         val blocker: String? get() = when {
             !serviceAvailable -> "voiceinteraction service unavailable"
             !googleInstalled -> "Google app not installed"
@@ -40,6 +53,9 @@ object CircleToSearch {
                 "Google is not the default assistant"
             else -> null
         }
+
+        fun localizedBlocker(context: Context): String? =
+            blockerRes?.let { context.getString(it) }
     }
 
     fun extraSettleMs(action: TargetAction): Int {
@@ -97,7 +113,14 @@ object CircleToSearch {
     fun assistantSettingsIntent(pm: PackageManager, sdkInt: Int = Build.VERSION.SDK_INT): Intent? {
         for (action in assistantSettingsActionCandidates(sdkInt)) {
             val intent = Intent(action)
-            if (intent.resolveActivity(pm) != null) return intent
+            val resolved = intent.resolveActivity(pm)
+            if (ActionExecutionEngine.resolvesToRealActivity(
+                    resolved?.packageName,
+                    resolved?.className,
+                )
+            ) {
+                return intent
+            }
         }
         return null
     }

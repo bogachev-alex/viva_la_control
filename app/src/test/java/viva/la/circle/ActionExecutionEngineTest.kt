@@ -1,7 +1,9 @@
 package viva.la.circle
 
 import viva.la.circle.engine.ActionExecutionEngine
+import viva.la.circle.engine.HuaweiPowerManagement
 import viva.la.circle.engine.OriginOs
+import viva.la.circle.engine.VendorProfile
 import viva.la.circle.model.TargetAction
 import viva.la.circle.service.InterceptorStateRepository
 import org.junit.Assert.assertEquals
@@ -47,8 +49,8 @@ class ActionExecutionEngineTest {
     @Test
     fun testTargetActionTitlesAndDescriptions() {
         for (action in TargetAction.entries) {
-            assertTrue("Title should not be empty for $action", action.title.isNotEmpty())
-            assertTrue("Description should not be empty for $action", action.description.isNotEmpty())
+            assertTrue("Title res should be set for $action", action.titleRes != 0)
+            assertTrue("Description res should be set for $action", action.descriptionRes != 0)
         }
     }
 
@@ -197,12 +199,39 @@ class ActionExecutionEngineTest {
                 "com.tosharoki.hwcts.StubAssistantService",
             ),
         )
+        assertTrue(
+            "EMUI answers unresolved implicit intents with HwResolverActivity",
+            ActionExecutionEngine.isAssistDisambiguation(
+                "com.huawei.android.internal.app",
+                "com.huawei.android.internal.app.HwResolverActivity",
+            ),
+        )
+        assertFalse(
+            ActionExecutionEngine.resolvesToRealActivity(
+                "com.huawei.android.internal.app",
+                "com.huawei.android.internal.app.HwResolverActivity",
+            ),
+        )
+        assertTrue(
+            ActionExecutionEngine.resolvesToRealActivity(
+                "com.huawei.systemmanager",
+                "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity",
+            ),
+        )
+        assertFalse(ActionExecutionEngine.resolvesToRealActivity(null, null))
     }
 
     @Test
     fun hwctsTileActionMatchesQsTileBroadcast() {
         assertEquals("com.tosharoki.hwcts.ACTION_TILE_TRIGGER", ActionExecutionEngine.HWCTS_TILE_ACTION)
         assertEquals("com.tosharoki.hwcts", ActionExecutionEngine.HWCTS_PACKAGE)
+    }
+
+    @Test
+    fun huaweiPowerManagementDetectsVendor() {
+        assertFalse(HuaweiPowerManagement.isHuaweiDevice(VendorProfile.VIVO))
+        assertFalse(HuaweiPowerManagement.isHuaweiDevice(VendorProfile.GENERIC))
+        assertTrue(HuaweiPowerManagement.isHuaweiDevice(VendorProfile.HUAWEI))
     }
 
     @Test

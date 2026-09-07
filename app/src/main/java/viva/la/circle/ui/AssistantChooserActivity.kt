@@ -32,8 +32,10 @@ import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import viva.la.circle.R
 import viva.la.circle.engine.ActionExecutionEngine
 import viva.la.circle.engine.AssistantAppInfo
 import viva.la.circle.service.InterceptorStateRepository
@@ -116,19 +118,22 @@ fun AssistantChooserSheet(
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        text = "Choose Voice Assistant",
+                        text = stringResource(R.string.choose_voice_assistant),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                     )
                 }
                 IconButton(onClick = onDismiss) {
-                    Icon(imageVector = AppIcons.Close, contentDescription = "Close")
+                    Icon(
+                        imageVector = AppIcons.Close,
+                        contentDescription = stringResource(R.string.close),
+                    )
                 }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Selection is remembered. Change it later on the main screen.",
+                text = stringResource(R.string.chooser_remember_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -137,7 +142,7 @@ fun AssistantChooserSheet(
 
             if (installedAssistants.isEmpty()) {
                 Text(
-                    text = "No installed voice assistants found.",
+                    text = stringResource(R.string.no_assistants_found),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 16.dp),
@@ -195,7 +200,11 @@ fun AssistantChooserItem(
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    text = if (assistant.isInstalled) assistant.packageName else "Not installed",
+                    text = if (assistant.isInstalled) {
+                        assistant.packageName
+                    } else {
+                        stringResource(R.string.not_installed)
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = if (assistant.isInstalled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.outline,
                 )
@@ -208,7 +217,7 @@ fun AssistantChooserItem(
                     shape = RoundedCornerShape(8.dp),
                 ) {
                     Text(
-                        text = "Default",
+                        text = stringResource(R.string.badge_default),
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,

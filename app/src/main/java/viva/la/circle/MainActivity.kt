@@ -67,6 +67,9 @@ class MainActivity : ComponentActivity() {
                     },
                     onCopyDiagnostics = { copyDiagnostics() },
                     onClearDiagnostics = { InterceptorStateRepository.clearDiag() },
+                    onAcknowledgeHuaweiAppLaunch = {
+                        InterceptorStateRepository.setHuaweiAppLaunchAcknowledged(this, true)
+                    },
                     diagEvents = diagEvents,
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -92,7 +95,10 @@ class MainActivity : ComponentActivity() {
         // report coming from someone else's phone.
         val header = buildString {
             appendLine("device=${Build.MANUFACTURER} ${Build.MODEL} sdk=${Build.VERSION.SDK_INT}")
-            appendLine("os=${state.detectedOsLabel} dismissDelay=${state.dismissDelayMs}ms")
+            appendLine(
+                "os=${state.detectedOsLabel} vendor=${state.detectedVendorId.ifEmpty { "-" }} " +
+                    "dismissDelay=${state.dismissDelayMs}ms",
+            )
             appendLine("blueLM=${state.blueLMAction} ${state.blueLMSpecificPackage ?: ""}")
             appendLine("camera=${state.cameraAction} ${state.cameraSpecificPackage ?: ""}")
             appendLine("cameraKeys=${state.cameraKeyCodes.sorted()} skipCameraApp=${state.skipCameraApp}")

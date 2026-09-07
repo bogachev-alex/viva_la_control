@@ -2,4 +2,156 @@
     <string name="app_name">Viva la Circle</string>
     <string name="accessibility_service_label">Viva la Circle</string>
     <string name="accessibility_service_description">Intercepts BlueLM / Vivo Assistant launches and routes them to Google Assistant.</string>
+
+    <!-- Target actions -->
+    <string name="action_none_title">Do Nothing (Disabled)</string>
+    <string name="action_none_description">Disable interception for this button</string>
+    <string name="action_chooser_title">Assistant Chooser Menu</string>
+    <string name="action_chooser_description">Opens chooser dialog with installed voice assistants</string>
+    <string name="action_default_title">Default Assistant</string>
+    <string name="action_default_description">Same as corner-swipe / long-press Home (system assist gesture)</string>
+    <string name="action_cts_title">Circle to Search</string>
+    <string name="action_cts_description">Google\'s screen search overlay (needs Google app as assistant)</string>
+    <string name="action_hwcts_title">HwCTS</string>
+    <string name="action_hwcts_description">HwCTS circle search on the current screen</string>
+    <string name="action_specific_title">Specific App</string>
+    <string name="action_specific_description">Launches user-selected package name</string>
+    <string name="action_flashlight_title">Toggle Flashlight</string>
+    <string name="action_flashlight_description">Toggles camera torch</string>
+    <string name="action_screenshot_title">Take Screenshot</string>
+    <string name="action_screenshot_description">Runs GLOBAL_ACTION_TAKE_SCREENSHOT</string>
+    <string name="action_mute_title">Mute / Unmute</string>
+    <string name="action_mute_description">Toggles media stream volume</string>
+
+    <!-- Status banner -->
+    <string name="service_active">Service Active</string>
+    <string name="service_inactive">Service Inactive</string>
+    <string name="service_active_description">Viva la Circle is enabled in System Settings and ready to launch configured action when triggers occur.</string>
+    <string name="service_inactive_description">Accessibility Service permission is required to detect Vivo BlueLM launch events and redirect them to your chosen assistant.</string>
+    <string name="process_running">Process Running</string>
+    <string name="waiting_for_trigger">Waiting for trigger</string>
+    <string name="action_required">Action Required</string>
+    <string name="badge_active">ACTIVE</string>
+    <string name="badge_disabled">DISABLED</string>
+    <string name="manage_accessibility">Manage Accessibility Settings</string>
+    <string name="enable_accessibility">Enable in Accessibility Settings</string>
+
+    <!-- Target action settings -->
+    <string name="target_action_settings">Target Action Settings</string>
+    <string name="bluelm_trigger_action">BlueLM Button Trigger Action</string>
+    <string name="launch_delay_after_dismiss">Launch delay after dismiss: %1$d ms</string>
+    <string name="launch_delay_hint">BACK hides Copilot immediately and keeps dismissing the OriginOS 5 float overlay while this wait runs. Then the action (Gemini) fires. Copilot still starts — the ROM does not give us the power key — but it should not stay on screen.</string>
+    <string name="camera_trigger_action">Camera Key Trigger Action</string>
+    <string name="dont_intercept_in_camera">Don\'t intercept in camera apps</string>
+    <string name="dont_intercept_in_camera_hint">Skip the shutter only if a camera app has already been in the foreground for 1.2s. Double-press still opens the camera (KEYCODE_DOUBLE_CLICK is not consumed).</string>
+    <string name="learned_camera_keys">Learned camera keys</string>
+    <string name="remove">Remove</string>
+    <string name="stop_key_capture">Stop key capture</string>
+    <string name="capture_next_key">Capture next key press</string>
+    <string name="capture_armed_hint">Capture is armed. Press the shutter half-way, full press, and grip if you use one. Nothing is consumed while capturing.</string>
+    <string name="test_selected_action">Test Selected Action Now</string>
+    <string name="currently_system_default">Currently the system default: %1$s</string>
+    <string name="app_selected">App: %1$s</string>
+    <string name="no_app_selected">No app selected</string>
+    <string name="change_app">Change App</string>
+    <string name="select_app">Select App</string>
+    <string name="default_assistant_loop_warning">System default (%1$s) is an intercepted assistant. Choosing this action would re-open it after every dismiss — pick Specific App or another action instead.</string>
+
+    <!-- Will launch -->
+    <string name="will_launch">Will launch: %1$s</string>
+    <string name="will_launch_none">Nothing — this trigger is disabled.</string>
+    <string name="will_launch_chooser">The chooser menu, every time.</string>
+    <string name="will_launch_default_unset">The system default assistant (none is currently set).</string>
+    <string name="will_launch_default_blocked">Blocked: %1$s is intercepted — pick Specific App instead.</string>
+    <string name="will_launch_default_app">%1$s — the system default, not a pick made here.</string>
+    <string name="will_launch_cts">Google Circle to Search over the current screen.</string>
+    <string name="will_launch_hwcts_missing">HwCTS is not installed — this action will not work on this device.</string>
+    <string name="will_launch_hwcts">HwCTS circle search on the current screen.</string>
+    <string name="will_launch_specific_unset">No app chosen yet — falls back to the system default assistant.</string>
+    <string name="will_launch_flashlight">Toggle the torch.</string>
+    <string name="will_launch_screenshot">Take a screenshot.</string>
+    <string name="will_launch_mute">Toggle media mute.</string>
+
+    <!-- Assistants -->
+    <string name="detected_voice_assistants">Detected Voice Assistants</string>
+    <string name="detected_voice_assistants_hint">Voice assistant apps installed on your device that can be launched when BlueLM is intercepted:</string>
+    <string name="badge_default">Default</string>
+    <string name="badge_installed">Installed</string>
+    <string name="badge_not_installed">Not Installed</string>
+    <string name="not_installed">Not installed</string>
+
+    <!-- App picker -->
+    <string name="select_specific_app">Select Specific App</string>
+    <string name="search_installed_apps">Search installed apps…</string>
+    <string name="no_apps_matching_search">No apps found matching search.</string>
+    <string name="cancel">Cancel</string>
+
+    <!-- Diagnostics -->
+    <string name="diagnostics">Diagnostics</string>
+    <string name="diagnostics_hint">In-app log. This ROM\'s logcat is silent, so capture lives here.</string>
+    <string name="assistant_resolution">Assistant resolution</string>
+    <string name="stop_capture">Stop capture</string>
+    <string name="capture_keys">Capture keys</string>
+    <string name="copy">Copy</string>
+    <string name="clear">Clear</string>
+    <string name="waiting_for_key">Waiting for a key. Press the shutter.</string>
+    <string name="no_diag_events">No events yet. Toggle the accessibility service or press a key.</string>
+    <string name="use_this_key">Use this key (%1$d)</string>
+
+    <!-- Statistics -->
+    <string name="interception_statistics">Interception Statistics</string>
+    <string name="total_intercepts">Total Intercepts</string>
+    <string name="service_state">Service State</string>
+    <string name="running">Running</string>
+    <string name="stopped">Stopped</string>
+    <string name="last_intercept_time">Last Intercept Time</string>
+    <string name="last_intercepted_package">Last Intercepted Package</string>
+    <string name="none_yet">None yet</string>
+    <string name="never">Never</string>
+
+    <!-- Onboarding -->
+    <string name="setup_how_it_works">Setup &amp; How It Works</string>
+    <string name="onboarding_why_title">1. Why Accessibility Permission is Needed</string>
+    <string name="onboarding_why_body">On Vivo X200 Ultra, long pressing the power button triggers Vivo\'s built-in BlueLM / Copilot assistant by default with no native option to remap it.\n\nOriginOS 6 does not deliver KEYCODE_POWER to accessibility (camera shutter keys still arrive). Viva la Circle therefore watches for the Copilot window, dismisses it, and launches your chosen action.</string>
+    <string name="onboarding_setup_title">2. Step-by-Step Setup Guide</string>
+    <string name="onboarding_step_1">Tap \'Enable in Accessibility Settings\' above to navigate to system settings.</string>
+    <string name="onboarding_step_2">Scroll down to \'Downloaded Apps\' or \'Installed Services\' section.</string>
+    <string name="onboarding_step_3">Find and select \'Viva la Circle\' from the list.</string>
+    <string name="onboarding_step_4">Turn on \'Use Viva la Circle\' toggle and confirm system permissions.</string>
+    <string name="onboarding_how_title">3. How Interception Works</string>
+    <string name="onboarding_how_body">Once enabled, the service runs quietly in the background:\n\n• OriginOS 6 does not give accessibility the power key, so Copilot still opens. The service dismisses that window, waits, then fires your BlueLM action.\n• Short-press Power is unchanged (the ROM keeps it).\n• Camera shutter remains a separate hardware-key intercept.</string>
+
+    <!-- Huawei -->
+    <string name="huawei_allow_background">Huawei: allow background launch</string>
+    <string name="huawei_allow_background_body">EMUI / HarmonyOS will stop the accessibility service unless this app is set to Manage manually under Settings → Battery → App launch (allow Auto-launch, Secondary launch, and Run in background).</string>
+    <string name="huawei_open_app_launch">Open App launch settings</string>
+    <string name="huawei_open_app_launch_toast">Open Settings → Battery → App launch → Viva la Circle</string>
+    <string name="huawei_already_configured">Already set up / hide</string>
+
+    <!-- HwCTS gate -->
+    <string name="hwcts_not_installed">HwCTS is not installed</string>
+    <string name="hwcts_not_installed_body">Install com.tosharoki.hwcts, or pick another action. Huawei devices without this package cannot use HwCTS circle search.</string>
+    <string name="hwcts_a11y_off">HwCTS accessibility service is off</string>
+    <string name="hwcts_a11y_off_body">Enable the HwCTS accessibility service, then try again.</string>
+    <string name="hwcts_ready">Ready. HwCTS is installed and its accessibility service is on.</string>
+
+    <!-- Circle to Search gate -->
+    <string name="cts_checking">Checking Google / assistant status…</string>
+    <string name="cts_ready_google">Ready. Google is the default assistant.</string>
+    <string name="cts_ready_contextual">Ready. This ROM exposes Contextual Search, so the default assistant does not need to be Google.</string>
+    <string name="cts_not_ready">Circle to Search is not ready.</string>
+    <string name="cts_install_google">Install the Google app, then set it as the default digital assistant.</string>
+    <string name="cts_open_assistant_settings">Open assistant settings</string>
+    <string name="cts_assistant_settings_path">Settings → Apps → Default apps → Digital assistant → Google</string>
+    <string name="cts_battery_hint">Set Autostart and No restrictions for Google in vivo battery settings. Otherwise Circle to Search may appear only after you open Google by hand.</string>
+    <string name="cts_blocker_service_unavailable">voiceinteraction service unavailable</string>
+    <string name="cts_blocker_google_not_installed">Google app not installed</string>
+    <string name="cts_blocker_google_not_assistant">Google is not the default assistant</string>
+    <string name="could_not_open">Could not open: %1$s</string>
+
+    <!-- Assistant chooser -->
+    <string name="choose_voice_assistant">Choose Voice Assistant</string>
+    <string name="chooser_remember_hint">Selection is remembered. Change it later on the main screen.</string>
+    <string name="no_assistants_found">No installed voice assistants found.</string>
+    <string name="close">Close</string>
 </resources>

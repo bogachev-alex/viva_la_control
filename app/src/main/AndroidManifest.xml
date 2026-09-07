@@ -28,6 +28,11 @@
         <package android:name="com.vivo.camera" />
         <package android:name="com.android.camera" />
         <package android:name="com.tosharoki.hwcts" />
+        <package android:name="com.huawei.hiassistantoversea" />
+        <package android:name="com.huawei.hiassistant" />
+        <package android:name="com.huawei.vassistant" />
+        <package android:name="com.huawei.camera" />
+        <package android:name="com.huawei.systemmanager" />
     </queries>
 
     <application

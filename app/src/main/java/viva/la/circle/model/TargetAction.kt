@@ -1,41 +1,47 @@
 package viva.la.circle.model
 
-enum class TargetAction(val title: String, val description: String) {
+import androidx.annotation.StringRes
+import viva.la.circle.R
+
+enum class TargetAction(
+    @param:StringRes val titleRes: Int,
+    @param:StringRes val descriptionRes: Int,
+) {
     NONE(
-        title = "Do Nothing (Disabled)",
-        description = "Disable interception for this button",
+        titleRes = R.string.action_none_title,
+        descriptionRes = R.string.action_none_description,
     ),
     ASSISTANT_CHOOSER(
-        title = "Assistant Chooser Menu",
-        description = "Opens chooser dialog with installed voice assistants"
+        titleRes = R.string.action_chooser_title,
+        descriptionRes = R.string.action_chooser_description,
     ),
     DEFAULT_ASSISTANT(
-        title = "Default Assistant",
-        description = "Same as corner-swipe / long-press Home (system assist gesture)"
+        titleRes = R.string.action_default_title,
+        descriptionRes = R.string.action_default_description,
     ),
     CIRCLE_TO_SEARCH(
-        title = "Circle to Search",
-        description = "Google's screen search overlay (needs Google app as assistant)"
+        titleRes = R.string.action_cts_title,
+        descriptionRes = R.string.action_cts_description,
     ),
     HWCTS(
-        title = "HwCTS",
-        description = "HwCTS circle search on the current screen"
+        titleRes = R.string.action_hwcts_title,
+        descriptionRes = R.string.action_hwcts_description,
     ),
     SPECIFIC_APP(
-        title = "Specific App",
-        description = "Launches user-selected package name"
+        titleRes = R.string.action_specific_title,
+        descriptionRes = R.string.action_specific_description,
     ),
     FLASHLIGHT(
-        title = "Toggle Flashlight",
-        description = "Toggles camera torch"
+        titleRes = R.string.action_flashlight_title,
+        descriptionRes = R.string.action_flashlight_description,
     ),
     SCREENSHOT(
-        title = "Take Screenshot",
-        description = "Runs GLOBAL_ACTION_TAKE_SCREENSHOT"
+        titleRes = R.string.action_screenshot_title,
+        descriptionRes = R.string.action_screenshot_description,
     ),
     MUTE_TOGGLE(
-        title = "Mute / Unmute",
-        description = "Toggles media stream volume"
+        titleRes = R.string.action_mute_title,
+        descriptionRes = R.string.action_mute_description,
     );
 
     companion object {

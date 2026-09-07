@@ -5,6 +5,7 @@ import android.content.Context
 import android.provider.Settings
 import android.text.TextUtils
 import viva.la.circle.engine.OriginOs
+import viva.la.circle.engine.VendorProfile
 import viva.la.circle.model.TargetAction
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +37,8 @@ data class InterceptorServiceState(
     val blueLMKeyCodes: Set<Int> = emptySet(),
     val dismissDelayMs: Int = 100,
     val detectedOsLabel: String = "",
+    val detectedVendorId: String = "",
+    val huaweiAppLaunchAcknowledged: Boolean = false,
 )
 
 enum class KeyCaptureTarget { CAMERA, BLUELM }
@@ -51,6 +54,7 @@ object InterceptorStateRepository {
     private const val KEY_BLUELM_KEY_CODES = "key_bluelm_key_codes"
     private const val KEY_DISMISS_DELAY_MS = "key_dismiss_delay_ms"
     private const val KEY_ORIGIN5_LAUNCH_DELAY_MIGRATED = "key_origin5_launch_delay_migrated"
+    private const val KEY_HUAWEI_APP_LAUNCH_ACKED = "key_huawei_app_launch_acked"
     const val LAUNCH_DELAY_MAX_MS = 500
     private const val STALE_TEST_PACKAGE = "com.tosharoki.hwcts"
     private const val DIAG_CAP = 200
@@ -81,17 +85,31 @@ object InterceptorStateRepository {
                     .putString(KEY_CAMERA_SPECIFIC_PKG, cameraSpecificPkg)
                     .apply()
             }
+            val profile = VendorProfile.current()
             val detection = OriginOs.detect()
+            val emuiVersion = OriginOs.readProp("ro.build.version.emui")
+            val harmonyVersion = OriginOs.readProp("ro.build.version.harmonyos")
+            val osLabel = VendorProfile.osLabel(
+                profile = profile,
+                vivoLabel = detection.label,
+                emuiVersion = emuiVersion,
+                harmonyVersion = harmonyVersion,
+            )
+            val seededDefaultDelay = when (profile.id) {
+                VendorProfile.VIVO.id -> OriginOs.defaultDismissDelayMs(detection.major)
+                else -> profile.defaultDismissDelayMs
+            }
             var dismissDelayMs = if (prefs.contains(KEY_DISMISS_DELAY_MS)) {
-                prefs.getInt(KEY_DISMISS_DELAY_MS, OriginOs.defaultDismissDelayMs(detection.major))
+                prefs.getInt(KEY_DISMISS_DELAY_MS, seededDefaultDelay)
                     .coerceIn(0, LAUNCH_DELAY_MAX_MS)
             } else {
-                OriginOs.defaultDismissDelayMs(detection.major).also { seeded ->
+                seededDefaultDelay.also { seeded ->
                     prefs.edit().putInt(KEY_DISMISS_DELAY_MS, seeded).apply()
                 }
             }
             // OriginOS 5 used to seed 0 ms. That launches on top of Copilot. One-time bump.
-            if (detection.major == 5 &&
+            if (profile.id == VendorProfile.VIVO.id &&
+                detection.major == 5 &&
                 dismissDelayMs == 0 &&
                 !prefs.getBoolean(KEY_ORIGIN5_LAUNCH_DELAY_MIGRATED, false)
             ) {
@@ -112,7 +130,9 @@ object InterceptorStateRepository {
                     cameraKeyCodes = cameraKeyCodes,
                     blueLMKeyCodes = blueLMKeyCodes,
                     dismissDelayMs = dismissDelayMs,
-                    detectedOsLabel = detection.label,
+                    detectedOsLabel = osLabel,
+                    detectedVendorId = profile.id,
+                    huaweiAppLaunchAcknowledged = prefs.getBoolean(KEY_HUAWEI_APP_LAUNCH_ACKED, false),
                 )
             }
         } catch (_: Exception) {
@@ -168,6 +188,11 @@ object InterceptorStateRepository {
         if (enabled) publishDiagSnapshot()
         val targetLabel = if (target == KeyCaptureTarget.BLUELM) "BlueLM button" else "shutter / grip"
         diag("CAPTURE", if (enabled) "armed for $targetLabel — press it now" else "disarmed")
+    }
+
+    fun setHuaweiAppLaunchAcknowledged(context: Context? = null, acknowledged: Boolean) {
+        _serviceState.update { it.copy(huaweiAppLaunchAcknowledged = acknowledged) }
+        persistBoolean(context, KEY_HUAWEI_APP_LAUNCH_ACKED, acknowledged)
     }
 
     fun setDismissDelayMs(context: Context? = null, delayMs: Int) {

@@ -2,6 +2,7 @@ package viva.la.circle
 
 import android.view.KeyEvent
 import viva.la.circle.engine.CircleToSearch
+import viva.la.circle.engine.VendorProfile
 import viva.la.circle.model.TargetAction
 import viva.la.circle.service.BlueLMInterceptorService
 import viva.la.circle.service.InterceptorStateRepository
@@ -142,6 +143,15 @@ class BlueLMInterceptorServiceTest {
         )
         assertFalse(BlueLMInterceptorService.isLikelyActivityWindow(""))
         assertFalse(BlueLMInterceptorService.isLikelyActivityWindow(null))
+        assertFalse(
+            "Recorder / overlay services must not steal preAssist",
+            BlueLMInterceptorService.isLikelyActivityWindow(
+                "com.huawei.screenrecorder.ScreenRecordService",
+            ),
+        )
+        assertTrue(BlueLMInterceptorService.isForegroundAppWindow(1, true))
+        assertFalse(BlueLMInterceptorService.isForegroundAppWindow(1, false))
+        assertFalse(BlueLMInterceptorService.isForegroundAppWindow(3, true))
         assertTrue(
             "Copilot overlay class must still be detected as BlueLM by package",
             BlueLMInterceptorService.isBlueLMOrVivoAssistant("com.vivo.ai.copilot", "android.widget.FrameLayout"),
@@ -171,7 +181,15 @@ class BlueLMInterceptorServiceTest {
     @Test
     fun containsCopilotWindowDetectsOverlayPackage() {
         val own = "viva.la.circle"
+        // Top window only — a stale Celia/Copilot entry lower in the list must not count.
         assertTrue(
+            BlueLMInterceptorService.containsCopilotWindow(
+                listOf("com.vivo.ai.copilot", "org.mozilla.firefox"),
+                own,
+            ),
+        )
+        assertFalse(
+            "Stale assistant under the browser must not keep the dismiss loop alive",
             BlueLMInterceptorService.containsCopilotWindow(
                 listOf("org.mozilla.firefox", "com.vivo.ai.copilot"),
                 own,
@@ -196,6 +214,73 @@ class BlueLMInterceptorServiceTest {
     }
 
     @Test
+    fun dismissStopsWhenTopIsNotAssistant() {
+        val own = "viva.la.circle"
+        val browser = "com.android.chrome"
+        assertFalse(
+            BlueLMInterceptorService.shouldStopDismissBacks(
+                topPackage = "com.huawei.hiassistantoversea",
+                preAssistPackage = browser,
+                ownPackage = own,
+            ),
+        )
+        assertTrue(
+            "User app restored — stop BACKs",
+            BlueLMInterceptorService.shouldStopDismissBacks(
+                topPackage = browser,
+                preAssistPackage = browser,
+                ownPackage = own,
+            ),
+        )
+        assertTrue(
+            "Launcher means overshoot — stop BACKs",
+            BlueLMInterceptorService.shouldStopDismissBacks(
+                topPackage = "com.huawei.android.launcher",
+                preAssistPackage = browser,
+                ownPackage = own,
+            ),
+        )
+        assertTrue(
+            BlueLMInterceptorService.isDismissOvershoot(
+                topPackage = "com.huawei.android.launcher",
+                preAssistPackage = browser,
+                ownPackage = own,
+            ),
+        )
+        assertFalse(
+            BlueLMInterceptorService.isDismissOvershoot(
+                topPackage = browser,
+                preAssistPackage = browser,
+                ownPackage = own,
+            ),
+        )
+        assertFalse(
+            BlueLMInterceptorService.shouldStopDismissBacks(
+                topPackage = null,
+                preAssistPackage = browser,
+                ownPackage = own,
+            ),
+        )
+    }
+
+    @Test
+    fun dismissBackOnlyWhileAssistantIsTop() {
+        val own = "viva.la.circle"
+        assertTrue(
+            BlueLMInterceptorService.shouldPressDismissBack(
+                "com.huawei.hiassistantoversea",
+                own,
+            ),
+        )
+        assertFalse(
+            "BACK must not fire at the app under an unfocused overlay",
+            BlueLMInterceptorService.shouldPressDismissBack("com.opera.browser", own),
+        )
+        assertFalse(BlueLMInterceptorService.shouldPressDismissBack(null, own))
+        assertFalse(BlueLMInterceptorService.shouldPressDismissBack("android", own))
+    }
+
+    @Test
     fun dismissBackStopsAtThreeAndWhenCopilotGone() {
         assertEquals(3, BlueLMInterceptorService.MAX_DISMISS_BACKS)
         assertTrue(
@@ -204,6 +289,16 @@ class BlueLMInterceptorServiceTest {
                 backPressCount = 0,
                 copilotPresent = true,
                 elapsedSinceLastBackMs = 100L,
+            ),
+        )
+        assertTrue(
+            "assumePresent skips a second window walk after top == assistant is already known",
+            BlueLMInterceptorService.canDismissCopilotBack(
+                actionLaunched = false,
+                backPressCount = 0,
+                copilotPresent = false,
+                elapsedSinceLastBackMs = 0L,
+                assumePresent = true,
             ),
         )
         assertFalse(
@@ -250,8 +345,20 @@ class BlueLMInterceptorServiceTest {
     @Test
     fun hwctsLeavesCopilotUpForTileBack() {
         assertEquals(1, BlueLMInterceptorService.copilotDismissBackBudget(TargetAction.HWCTS))
-        assertEquals(3, BlueLMInterceptorService.copilotDismissBackBudget(TargetAction.CIRCLE_TO_SEARCH))
-        assertEquals(3, BlueLMInterceptorService.copilotDismissBackBudget(TargetAction.FLASHLIGHT))
+        assertEquals(
+            3,
+            BlueLMInterceptorService.copilotDismissBackBudget(
+                TargetAction.CIRCLE_TO_SEARCH,
+                VendorProfile.VIVO,
+            ),
+        )
+        assertEquals(
+            1,
+            BlueLMInterceptorService.copilotDismissBackBudget(
+                TargetAction.FLASHLIGHT,
+                VendorProfile.HUAWEI,
+            ),
+        )
         assertFalse(BlueLMInterceptorService.shouldWaitUntilCopilotGone(TargetAction.HWCTS))
         assertTrue(BlueLMInterceptorService.shouldWaitUntilCopilotGone(TargetAction.CIRCLE_TO_SEARCH))
         assertTrue(
