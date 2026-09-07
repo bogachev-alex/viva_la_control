@@ -1,0 +1,140 @@
+package viva.la.circle.engine
+
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.res.Resources
+import android.os.Build
+import android.os.Bundle
+import android.provider.Settings
+import viva.la.circle.model.TargetAction
+import viva.la.circle.service.InterceptorStateRepository
+
+/**
+ * Circle to Search via SearchManager.launchAssist(Bundle). SystemUI adds
+ * SHOW_WITH_SCREENSHOT; the Google app reads omni.entry_point and opens LensientActivity
+ * instead of the ordinary assistant. Path idea from MiCTS (GPL-3.0); this implementation
+ * is original.
+ */
+object CircleToSearch {
+
+    const val CTS_SETTLE_MS = 250
+    const val GOOGLE_PACKAGE = "com.google.android.googlequicksearchbox"
+
+    const val KEY_ENTRY_POINT = "omni.entry_point"
+    const val KEY_INVOCATION_TIME = "invocation_time_ms"
+    const val DEFAULT_ENTRY_POINT = 1
+
+    data class Readiness(
+        val googleInstalled: Boolean,
+        val googleIsAssistant: Boolean,
+        val contextualSearchKey: String?,
+        val serviceAvailable: Boolean,
+    ) {
+        val usable: Boolean get() = serviceAvailable && googleInstalled &&
+            (googleIsAssistant || !contextualSearchKey.isNullOrEmpty())
+        val blocker: String? get() = when {
+            !serviceAvailable -> "voiceinteraction service unavailable"
+            !googleInstalled -> "Google app not installed"
+            !googleIsAssistant && contextualSearchKey.isNullOrEmpty() ->
+                "Google is not the default assistant"
+            else -> null
+        }
+    }
+
+    fun extraSettleMs(action: TargetAction): Int {
+        return if (action == TargetAction.CIRCLE_TO_SEARCH) CTS_SETTLE_MS else 0
+    }
+
+    fun isGoogleAssistantSetting(raw: String?): Boolean {
+        val pkg = raw?.substringBefore('/')?.trim().orEmpty()
+        return pkg == GOOGLE_PACKAGE
+    }
+
+    fun assistantSettingsActionCandidates(sdkInt: Int): List<String> {
+        val actions = mutableListOf<String>()
+        if (sdkInt >= 29) {
+            actions += "android.settings.ASSIST_GESTURE_SETTINGS"
+        }
+        actions += Settings.ACTION_VOICE_INPUT_SETTINGS
+        if (sdkInt >= 24) {
+            actions += Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS
+        }
+        actions += Settings.ACTION_APPLICATION_SETTINGS
+        return actions
+    }
+
+    fun probe(context: Context): Readiness {
+        val googleInstalled = isGoogleInstalled(context)
+        val googleIsAssistant = isGoogleDefaultAssistant(context)
+        val contextualSearchKey = readContextualSearchKey()
+        val serviceAvailable = ActionExecutionEngine.hasLaunchAssist(context)
+        val readiness = Readiness(
+            googleInstalled = googleInstalled,
+            googleIsAssistant = googleIsAssistant,
+            contextualSearchKey = contextualSearchKey,
+            serviceAvailable = serviceAvailable,
+        )
+        InterceptorStateRepository.diag(
+            "CTS",
+            "probe usable=${readiness.usable} googleInstalled=$googleInstalled " +
+                "googleIsAssistant=$googleIsAssistant csKey=${contextualSearchKey ?: "(empty)"} " +
+                "service=$serviceAvailable blocker=${readiness.blocker ?: "none"}",
+        )
+        return readiness
+    }
+
+    fun trigger(context: Context, entryPoint: Int = DEFAULT_ENTRY_POINT): Boolean {
+        val args = sessionArgs(entryPoint)
+        if (ActionExecutionEngine.invokeSystemAssistGesture(context, args)) {
+            InterceptorStateRepository.diag("CTS", "trigger via launchAssist entry=$entryPoint")
+            return true
+        }
+        InterceptorStateRepository.diag("CTS", "trigger failed: launchAssist missed")
+        return false
+    }
+
+    fun assistantSettingsIntent(pm: PackageManager, sdkInt: Int = Build.VERSION.SDK_INT): Intent? {
+        for (action in assistantSettingsActionCandidates(sdkInt)) {
+            val intent = Intent(action)
+            if (intent.resolveActivity(pm) != null) return intent
+        }
+        return null
+    }
+
+    fun sessionArgs(entryPoint: Int, invocationTimeMs: Long = System.currentTimeMillis()): Bundle {
+        return Bundle().apply {
+            putInt(KEY_ENTRY_POINT, entryPoint)
+            putLong(KEY_INVOCATION_TIME, invocationTimeMs)
+        }
+    }
+
+    private fun isGoogleInstalled(context: Context): Boolean {
+        return try {
+            context.packageManager.getApplicationInfo(GOOGLE_PACKAGE, 0)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun isGoogleDefaultAssistant(context: Context): Boolean {
+        val cr = context.contentResolver
+        return isGoogleAssistantSetting(Settings.Secure.getString(cr, "assistant")) ||
+            isGoogleAssistantSetting(Settings.Secure.getString(cr, "voice_interaction_service"))
+    }
+
+    private fun readContextualSearchKey(): String? {
+        return try {
+            val id = Resources.getSystem().getIdentifier(
+                "config_defaultContextualSearchKey",
+                "string",
+                "android",
+            )
+            if (id == 0) return null
+            Resources.getSystem().getString(id).takeIf { it.isNotEmpty() }
+        } catch (_: Exception) {
+            null
+        }
+    }
+}

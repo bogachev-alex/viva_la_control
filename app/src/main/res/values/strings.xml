@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Viva la Circle</string>
+    <string name="accessibility_service_label">Viva la Circle</string>
+    <string name="accessibility_service_description">Intercepts BlueLM / Vivo Assistant launches and routes them to Google Assistant.</string>
+</resources>
