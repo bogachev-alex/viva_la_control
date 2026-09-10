@@ -2,52 +2,14 @@ package viva.la.circle
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import viva.la.circle.engine.ActionExecutionEngine
 import viva.la.circle.engine.VendorProfile
 import viva.la.circle.model.TargetAction
+import viva.la.circle.remap.InterceptedAssistant
 import viva.la.circle.service.BlueLMInterceptorService
 
 class VendorProfileTest {
-
-    @Test
-    fun huaweiCeliaPackagesAreIntercepted() {
-        val ownPkg = "viva.la.circle"
-        listOf(
-            "com.huawei.hiassistantoversea", // RU / global builds
-            "com.huawei.hiassistant", // domestic builds
-            "com.huawei.vassistant", // older EMUI
-        ).forEach { pkg ->
-            assertTrue(
-                "$pkg should be intercepted",
-                BlueLMInterceptorService.isBlueLMOrVivoAssistant(pkg, null, ownPkg),
-            )
-        }
-    }
-
-    @Test
-    fun vivoDetectionIsUnchangedByTheVendorSeam() {
-        val ownPkg = "viva.la.circle"
-        listOf(
-            "com.vivo.ai.copilot",
-            "com.vivo.agent",
-            "com.bbk.voiceassistant",
-            "com.vivo.bluelm",
-        ).forEach { pkg ->
-            assertTrue(pkg, BlueLMInterceptorService.isBlueLMOrVivoAssistant(pkg, null, ownPkg))
-        }
-        // The compound vivo+agent rule must survive.
-        assertTrue(BlueLMInterceptorService.isBlueLMOrVivoAssistant("com.vivo.some.agent", null, ownPkg))
-    }
-
-    @Test
-    fun unrelatedAppsAndOwnPackageAreNotIntercepted() {
-        val ownPkg = "viva.la.circle"
-        assertFalse(BlueLMInterceptorService.isBlueLMOrVivoAssistant("com.whatsapp", null, ownPkg))
-        assertFalse(BlueLMInterceptorService.isBlueLMOrVivoAssistant("com.google.android.apps.bard", null, ownPkg))
-        assertFalse(BlueLMInterceptorService.isBlueLMOrVivoAssistant(ownPkg, null, ownPkg))
-    }
 
     @Test
     fun profileIsChosenFromBuildProps() {
@@ -80,55 +42,6 @@ class VendorProfileTest {
         assertEquals(
             VendorProfile.GENERIC,
             VendorProfile.forProps("Google", null, null, null),
-        )
-    }
-
-    @Test
-    fun knownPackagesUnionsEveryProfile() {
-        val known = BlueLMInterceptorService.KNOWN_PACKAGES
-        assertTrue(known.contains("com.vivo.ai.copilot"))
-        assertTrue(known.contains("com.huawei.hiassistantoversea"))
-    }
-
-    @Test
-    fun vivoSecondaryUiStillSuppressesRemapping() {
-        // Copilot settings / circle-to-search screens must not be treated as the wake UI.
-        assertTrue(BlueLMInterceptorService.isCopilotSecondaryUi("com.vivo.ai.copilot.settings.MainActivity"))
-        assertTrue(BlueLMInterceptorService.isCopilotSecondaryUi("com.vivo.ai.copilot.circletosearch.Foo"))
-        assertFalse(BlueLMInterceptorService.isCopilotSecondaryUi("com.vivo.ai.copilot.FloatService"))
-    }
-
-    @Test
-    fun celiaAsSystemDefaultWouldLoop() {
-        val ownPkg = "viva.la.circle"
-        // On Huawei the system default assistant *is* Celia. Intercept + DEFAULT_ASSISTANT
-        // must refuse, otherwise dismiss → assist gesture → Celia again.
-        assertTrue(
-            ActionExecutionEngine.wouldLoopToInterceptedAssistant(
-                "com.huawei.hiassistantoversea",
-                ownPkg,
-            ),
-        )
-        assertTrue(
-            ActionExecutionEngine.wouldLoopToInterceptedAssistant(
-                "com.huawei.hiassistant",
-                ownPkg,
-            ),
-        )
-        assertTrue(
-            ActionExecutionEngine.wouldLoopToInterceptedAssistant(
-                "com.vivo.ai.copilot",
-                ownPkg,
-            ),
-        )
-        assertFalse(
-            ActionExecutionEngine.wouldLoopToInterceptedAssistant(
-                "com.google.android.googlequicksearchbox",
-                ownPkg,
-            ),
-        )
-        assertFalse(
-            ActionExecutionEngine.wouldLoopToInterceptedAssistant(null, ownPkg),
         )
     }
 
@@ -182,6 +95,21 @@ class VendorProfileTest {
                 vivoLabel = "OriginOS 6",
                 emuiVersion = null,
                 harmonyVersion = null,
+            ),
+        )
+    }
+
+    @Test
+    fun engineLoopGuardDelegatesToInterceptedAssistant() {
+        val ownPkg = "viva.la.circle"
+        assertEquals(
+            InterceptedAssistant.wouldLoopToInterceptedAssistant("com.huawei.hiassistantoversea", ownPkg),
+            ActionExecutionEngine.wouldLoopToInterceptedAssistant("com.huawei.hiassistantoversea", ownPkg),
+        )
+        assertFalse(
+            ActionExecutionEngine.wouldLoopToInterceptedAssistant(
+                "com.google.android.googlequicksearchbox",
+                ownPkg,
             ),
         )
     }

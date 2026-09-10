@@ -15,7 +15,7 @@ import android.util.Log
 import android.widget.Toast
 import viva.la.circle.R
 import viva.la.circle.model.TargetAction
-import viva.la.circle.service.BlueLMInterceptorService
+import viva.la.circle.remap.InterceptedAssistant
 import viva.la.circle.service.InterceptorStateRepository
 import viva.la.circle.ui.AssistantChooserActivity
 
@@ -432,13 +432,10 @@ object ActionExecutionEngine {
     fun wouldLoopToInterceptedAssistant(
         systemDefaultPackage: String?,
         ownPackageName: String = "",
-    ): Boolean {
-        return BlueLMInterceptorService.isBlueLMOrVivoAssistant(
-            systemDefaultPackage,
-            null,
-            ownPackageName,
-        )
-    }
+    ): Boolean = InterceptedAssistant.wouldLoopToInterceptedAssistant(
+        systemDefaultPackage,
+        ownPackageName,
+    )
 
     fun launchDefaultAssistant(context: Context): Boolean {
         val (systemDefault, source) = resolveSystemDefaultAssistant(context)

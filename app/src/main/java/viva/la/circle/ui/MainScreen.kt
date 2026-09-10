@@ -73,6 +73,7 @@ import viva.la.circle.engine.AssistantAppInfo
 import viva.la.circle.engine.CircleToSearch
 import viva.la.circle.engine.HuaweiPowerManagement
 import viva.la.circle.model.TargetAction
+import viva.la.circle.remap.InterceptedAssistant
 import viva.la.circle.service.DiagEvent
 import viva.la.circle.service.InterceptorServiceState
 import viva.la.circle.service.InterceptorStateRepository
@@ -661,7 +662,7 @@ fun ActionSelectorList(
                             ActionExecutionEngine.resolveSystemDefaultAssistant(context).first
                         }
                         if (loopPkg != null &&
-                            ActionExecutionEngine.wouldLoopToInterceptedAssistant(
+                            InterceptedAssistant.wouldLoopToInterceptedAssistant(
                                 loopPkg,
                                 context.packageName,
                             )
@@ -1693,7 +1694,7 @@ fun WillLaunchSummary(action: TargetAction, specificPackage: String?) {
         TargetAction.DEFAULT_ASSISTANT -> when {
             pkg == null ->
                 stringResource(R.string.will_launch_default_unset)
-            ActionExecutionEngine.wouldLoopToInterceptedAssistant(pkg, context.packageName) ->
+            InterceptedAssistant.wouldLoopToInterceptedAssistant(pkg, context.packageName) ->
                 stringResource(R.string.will_launch_default_blocked, pkg)
             else ->
                 stringResource(

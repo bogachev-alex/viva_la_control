@@ -4,6 +4,7 @@ import android.view.KeyEvent
 import viva.la.circle.engine.CircleToSearch
 import viva.la.circle.engine.VendorProfile
 import viva.la.circle.model.TargetAction
+import viva.la.circle.remap.InterceptedAssistant
 import viva.la.circle.service.BlueLMInterceptorService
 import viva.la.circle.service.InterceptorStateRepository
 import org.junit.Assert.assertEquals
@@ -18,77 +19,6 @@ class BlueLMInterceptorServiceTest {
     @Before
     fun setUp() {
         InterceptorStateRepository.reset()
-    }
-
-    @Test
-    fun testDetectKnownPackages() {
-        val knownPackages = listOf(
-            "com.vivo.agent",
-            "com.vivo.vpa",
-            "com.bbk.voiceassistant",
-            "com.vivo.ai.copilot",
-            "com.vivo.blue.assistant",
-            "com.vivo.bluelm"
-        )
-
-        for (pkg in knownPackages) {
-            assertTrue("Package $pkg should be detected", BlueLMInterceptorService.isBlueLMOrVivoAssistant(pkg, null))
-        }
-    }
-
-    @Test
-    fun testDetectKeywordMatches() {
-        val matchingPackages = listOf(
-            "com.vivo.something.bluelm",
-            "com.vivoassistant.app",
-            "com.vivo.jovi.home",
-        )
-
-        for (pkg in matchingPackages) {
-            assertTrue("Package $pkg should be detected", BlueLMInterceptorService.isBlueLMOrVivoAssistant(pkg, "MainActivity"))
-        }
-    }
-
-    @Test
-    fun testIgnoreBroadSubstringMatches() {
-        assertFalse(
-            "Bare agent substring must not match",
-            BlueLMInterceptorService.isBlueLMOrVivoAssistant("com.random.agent", "AgentActivity"),
-        )
-        assertFalse(
-            "Class-name jovi must not match",
-            BlueLMInterceptorService.isBlueLMOrVivoAssistant("com.other.app", "com.vivo.jovi.VoiceActivity"),
-        )
-        assertFalse(
-            "vpa substring in unrelated package must not match",
-            BlueLMInterceptorService.isBlueLMOrVivoAssistant("com.example.tvparental", null),
-        )
-        assertFalse(
-            "Microsoft Copilot must not be treated as Vivo BlueLM",
-            BlueLMInterceptorService.isBlueLMOrVivoAssistant("com.microsoft.copilot", null),
-        )
-    }
-
-    @Test
-    fun testIgnoreOwnPackage() {
-        val ownPkg = "viva.la.circle"
-        assertFalse(
-            "Own package should be ignored",
-            BlueLMInterceptorService.isBlueLMOrVivoAssistant(ownPkg, "MainActivity", ownPkg)
-        )
-    }
-
-    @Test
-    fun testIgnoreNormalApps() {
-        val normalApps = listOf(
-            "com.android.settings",
-            "com.google.android.youtube",
-            "com.whatsapp"
-        )
-
-        for (pkg in normalApps) {
-            assertFalse("App $pkg should NOT be detected", BlueLMInterceptorService.isBlueLMOrVivoAssistant(pkg, "MainActivity"))
-        }
     }
 
     @Test
@@ -153,25 +83,25 @@ class BlueLMInterceptorServiceTest {
         assertFalse(BlueLMInterceptorService.isForegroundAppWindow(1, false))
         assertFalse(BlueLMInterceptorService.isForegroundAppWindow(3, true))
         assertTrue(
-            "Copilot overlay class must still be detected as BlueLM by package",
-            BlueLMInterceptorService.isBlueLMOrVivoAssistant("com.vivo.ai.copilot", "android.widget.FrameLayout"),
+            "Wake overlay class must still match Intercepted assistant by package",
+            InterceptedAssistant.isInterceptedAssistant("com.vivo.ai.copilot", "android.widget.FrameLayout"),
         )
         assertFalse(
-            "Copilot overlay class is not an activity for FG tracking",
+            "Overlay class is not an activity for FG tracking",
             BlueLMInterceptorService.isLikelyActivityWindow("android.widget.FrameLayout"),
         )
         assertTrue(
-            BlueLMInterceptorService.isCopilotWakeUi("com.vivo.ai.copilot", "android.widget.FrameLayout"),
+            InterceptedAssistant.isWakeUi("com.vivo.ai.copilot", "android.widget.FrameLayout"),
         )
         assertTrue(
-            BlueLMInterceptorService.isCopilotWakeUi(
+            InterceptedAssistant.isWakeUi(
                 "com.vivo.ai.copilot",
                 "com.vivo.ai.copilot.transfer.EmptyLauncherActivity",
             ),
         )
         assertFalse(
             "Settings must not be remapped",
-            BlueLMInterceptorService.isCopilotWakeUi(
+            InterceptedAssistant.isWakeUi(
                 "com.vivo.ai.copilot",
                 "com.vivo.ai.copilot.settings.activity.AboutActivity",
             ),

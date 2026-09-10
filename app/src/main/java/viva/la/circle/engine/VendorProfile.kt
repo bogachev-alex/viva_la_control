@@ -1,22 +1,15 @@
 package viva.la.circle.engine
 
 /**
- * Per-OEM assistant description.
+ * Per-OEM Remap *tuning* (dismiss budget, delays, UI label).
  *
- * Detection picks at most one profile for *tuning* (dismiss budget, delays, UI label), but
- * assistant matching deliberately unions every profile: recognising a Vivo package on a Huawei
- * phone costs nothing (it will not be installed) and it keeps matching independent of a getprop
- * probe that cannot run in unit tests.
+ * Intercepted assistant package matching lives in [viva.la.circle.remap.InterceptedAssistant].
+ * Detection picks at most one profile for timing; identity matching unions every vendor surface
+ * and does not depend on [current].
  */
 data class VendorProfile(
     val id: String,
     val label: String,
-    /** Exact packages whose window means "the OEM assistant just opened". */
-    val assistantPackages: Set<String>,
-    /** Lowercase substrings, matched against the package name only — never the class name. */
-    val assistantPackageHints: List<String>,
-    /** Class-name substrings that are the assistant's *other* screens and must not be remapped. */
-    val secondaryUiClassHints: List<String>,
     val maxDismissBacks: Int,
     val dismissTimeoutMs: Long,
     val defaultDismissDelayMs: Int,
@@ -33,29 +26,6 @@ data class VendorProfile(
         val VIVO = VendorProfile(
             id = "vivo",
             label = "OriginOS / Funtouch",
-            assistantPackages = setOf(
-                "com.vivo.agent",
-                "com.vivo.vpa",
-                "com.bbk.voiceassistant",
-                "com.vivo.ai.copilot",
-                "com.vivo.blue.assistant",
-                "com.vivo.bluelm",
-            ),
-            assistantPackageHints = listOf(
-                "bluelm",
-                "jovi",
-                "vivoassistant",
-                "bbk.voiceassistant",
-            ),
-            secondaryUiClassHints = listOf(
-                ".settings.",
-                "circletosearch",
-                ".photos.ui",
-                "PrivacyPolicy",
-                "UserPolicy",
-                "AboutActivity",
-                "FeedBackDialog",
-            ),
             maxDismissBacks = 3,
             dismissTimeoutMs = 400L,
             defaultDismissDelayMs = 100,
@@ -73,16 +43,6 @@ data class VendorProfile(
         val HUAWEI = VendorProfile(
             id = "huawei",
             label = "EMUI / HarmonyOS",
-            assistantPackages = setOf(
-                "com.huawei.hiassistantoversea",
-                "com.huawei.hiassistant",
-                "com.huawei.vassistant",
-            ),
-            assistantPackageHints = listOf(
-                "hiassistant",
-                "vassistant",
-            ),
-            secondaryUiClassHints = emptyList(),
             maxDismissBacks = 1,
             dismissTimeoutMs = 400L,
             defaultDismissDelayMs = 100,
@@ -95,9 +55,6 @@ data class VendorProfile(
         val GENERIC = VendorProfile(
             id = "generic",
             label = "unknown",
-            assistantPackages = emptySet(),
-            assistantPackageHints = emptyList(),
-            secondaryUiClassHints = emptyList(),
             maxDismissBacks = 3,
             dismissTimeoutMs = 400L,
             defaultDismissDelayMs = 100,
@@ -107,7 +64,7 @@ data class VendorProfile(
             focusPollMs = 16L,
         )
 
-        /** Every profile consulted when matching an assistant window. */
+        /** Every profile consulted when choosing device tuning. */
         val ALL = listOf(VIVO, HUAWEI)
 
         fun byId(id: String?): VendorProfile = ALL.firstOrNull { it.id == id } ?: GENERIC
@@ -176,18 +133,5 @@ data class VendorProfile(
         fun resetCacheForTests() {
             cached = null
         }
-
-        /** True if [packageName] is an OEM assistant we intercept, per any known profile. */
-        fun matchesAnyAssistant(packageName: String): Boolean {
-            val pkg = packageName.lowercase()
-            return ALL.any { profile ->
-                profile.assistantPackages.contains(pkg) ||
-                    profile.assistantPackageHints.any { pkg.contains(it) }
-            }
-        }
-
-        /** True if [className] is one of the assistant's secondary screens, per any profile. */
-        fun matchesAnySecondaryUi(className: String): Boolean =
-            ALL.any { profile -> profile.secondaryUiClassHints.any { className.contains(it) } }
     }
 }

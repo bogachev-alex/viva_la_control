@@ -16,6 +16,7 @@ import viva.la.circle.engine.ActionExecutionEngine
 import viva.la.circle.engine.CircleToSearch
 import viva.la.circle.engine.VendorProfile
 import viva.la.circle.model.TargetAction
+import viva.la.circle.remap.InterceptedAssistant
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -120,10 +121,6 @@ class BlueLMInterceptorService : AccessibilityService() {
         /** Vivo Copilot is bound to long-press power. Fire before the ROM opens it. */
         const val POWER_LONG_PRESS_MS = 500L
 
-        /** Union of every vendor profile's assistant packages. Kept as a property for tests. */
-        val KNOWN_PACKAGES: Set<String>
-            get() = VendorProfile.ALL.flatMap { it.assistantPackages }.toSet()
-
         val KNOWN_CAMERA_PACKAGES = setOf(
             "com.vivo.camera",
             "com.android.camera",
@@ -153,38 +150,6 @@ class BlueLMInterceptorService : AccessibilityService() {
             }.filter { it != KeyEvent.KEYCODE_UNKNOWN }.toSet()
         }
 
-        fun isBlueLMOrVivoAssistant(packageName: String?, className: String?, ownPackageName: String = ""): Boolean {
-            val pkg = packageName?.lowercase() ?: ""
-            if (pkg.isEmpty()) return false
-
-            if (ownPackageName.isNotEmpty() && ((pkg == ownPackageName.lowercase()) || pkg.startsWith("viva.la.circle"))) {
-                return false
-            }
-
-            if (KNOWN_PACKAGES.contains(pkg)) {
-                return true
-            }
-
-            // Vivo keeps its compound rule; everything else comes from the vendor profiles.
-            if (pkg.contains("vivo") && pkg.contains("agent")) return true
-            return VendorProfile.matchesAnyAssistant(pkg)
-        }
-
-        /**
-         * Copilot 5.6.x settings / gallery / circle-to-search must not be remapped.
-         * Power-button UI is FloatService overlays plus EmptyLauncher / chat.
-         */
-        fun isCopilotSecondaryUi(className: String?): Boolean {
-            val cls = className.orEmpty()
-            if (cls.isEmpty()) return false
-            return VendorProfile.matchesAnySecondaryUi(cls)
-        }
-
-        fun isCopilotWakeUi(packageName: String?, className: String?, ownPackageName: String = ""): Boolean {
-            if (!isBlueLMOrVivoAssistant(packageName, className, ownPackageName)) return false
-            return !isCopilotSecondaryUi(className)
-        }
-
         /**
          * True when the *top* window (first non-empty entry) is an intercepted assistant.
          * A closing overlay that is still somewhere in the list must not count — that is what
@@ -192,11 +157,11 @@ class BlueLMInterceptorService : AccessibilityService() {
          */
         fun containsCopilotWindow(packageNames: List<String?>, ownPackage: String): Boolean {
             val top = packageNames.firstOrNull { !it.isNullOrEmpty() }
-            return isBlueLMOrVivoAssistant(top, null, ownPackage)
+            return InterceptedAssistant.isInterceptedAssistant(top, null, ownPackage)
         }
 
         fun isAssistantTopWindow(topPackage: String?, ownPackage: String): Boolean =
-            isBlueLMOrVivoAssistant(topPackage, null, ownPackage)
+            InterceptedAssistant.isInterceptedAssistant(topPackage, null, ownPackage)
 
         /**
          * Stop BACKs once the top window is known and is not the assistant.
@@ -208,7 +173,7 @@ class BlueLMInterceptorService : AccessibilityService() {
             ownPackage: String,
         ): Boolean {
             if (topPackage.isNullOrBlank()) return false
-            return !isBlueLMOrVivoAssistant(topPackage, null, ownPackage)
+            return !InterceptedAssistant.isInterceptedAssistant(topPackage, null, ownPackage)
         }
 
         fun isDismissOvershoot(
@@ -217,7 +182,7 @@ class BlueLMInterceptorService : AccessibilityService() {
             ownPackage: String,
         ): Boolean {
             if (topPackage.isNullOrBlank()) return false
-            if (isBlueLMOrVivoAssistant(topPackage, null, ownPackage)) return false
+            if (InterceptedAssistant.isInterceptedAssistant(topPackage, null, ownPackage)) return false
             if (preAssistPackage != null &&
                 topPackage.equals(preAssistPackage, ignoreCase = true)
             ) {
@@ -598,13 +563,13 @@ class BlueLMInterceptorService : AccessibilityService() {
         if (isFgApp && packageName != foregroundPackage) {
             foregroundPackage = packageName
             foregroundSinceMs = now
-            if (!isBlueLMOrVivoAssistant(packageName, className, ownPkg)) {
+            if (!InterceptedAssistant.isInterceptedAssistant(packageName, className, ownPkg)) {
                 lastUserForegroundPackage = packageName
             }
             InterceptorStateRepository.diag("FG", "pkg=$packageName cls=$className")
         }
 
-        if (isCopilotWakeUi(packageName, className, ownPkg)) {
+        if (InterceptedAssistant.isWakeUi(packageName, className, ownPkg)) {
             val state = InterceptorStateRepository.serviceState.value
             if (state.blueLMAction == TargetAction.NONE) {
                 InterceptorStateRepository.diag("BLM", "rejected: blueLMAction=NONE pkg=$packageName")
