@@ -95,7 +95,6 @@ fun MainScreen(
     onSelectBlueLMAction: (TargetAction, String?) -> Unit = { _, _ -> },
     onSelectCameraAction: (TargetAction, String?) -> Unit = { _, _ -> },
     onSkipCameraAppChange: (Boolean) -> Unit = {},
-    onDismissDelayChange: (Int) -> Unit = {},
     onDiagnosticsEnabledChange: (Boolean) -> Unit = {},
     onCaptureModeChange: (Boolean) -> Unit = {},
     onUseCapturedKey: (Int) -> Unit = {},
@@ -163,7 +162,6 @@ fun MainScreen(
                 onSelectCameraAction = onSelectCameraAction,
                 onOpenAppPickerForCamera = { showAppPickerForCamera = true },
                 onSkipCameraAppChange = onSkipCameraAppChange,
-                onDismissDelayChange = onDismissDelayChange,
                 onCaptureModeChange = onCaptureModeChange,
                 onRemoveCapturedKey = onRemoveCapturedKey,
                 onTestSelectedAction = onTestAssistantClick,
@@ -356,7 +354,6 @@ fun TargetActionConfigCard(
     onSelectCameraAction: (TargetAction, String?) -> Unit,
     onOpenAppPickerForCamera: () -> Unit,
     onSkipCameraAppChange: (Boolean) -> Unit,
-    onDismissDelayChange: (Int) -> Unit,
     onCaptureModeChange: (Boolean) -> Unit,
     onRemoveCapturedKey: (Int) -> Unit,
     onTestSelectedAction: () -> Unit,
@@ -411,25 +408,6 @@ fun TargetActionConfigCard(
                 action = state.blueLMAction,
                 specificPackage = state.blueLMSpecificPackage,
             )
-
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = stringResource(R.string.launch_delay_after_dismiss, state.dismissDelayMs),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = stringResource(R.string.launch_delay_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Slider(
-                    value = state.dismissDelayMs.toFloat(),
-                    onValueChange = { onDismissDelayChange(it.toInt()) },
-                    valueRange = 0f..InterceptorStateRepository.LAUNCH_DELAY_MAX_MS.toFloat(),
-                    steps = 24,
-                )
-            }
 
             Spacer(modifier = Modifier.height(4.dp))
 

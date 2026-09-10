@@ -13,10 +13,19 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import viva.la.circle.engine.ActionExecutionEngine
-import viva.la.circle.engine.CircleToSearch
 import viva.la.circle.engine.VendorProfile
 import viva.la.circle.model.TargetAction
+import viva.la.circle.remap.TargetActionFire
+import viva.la.circle.remap.DeviceRemapProfile
+import viva.la.circle.remap.EngineFireTargetAction
 import viva.la.circle.remap.InterceptedAssistant
+import viva.la.circle.remap.KeyRemapPolicy
+import viva.la.circle.remap.RemapBack
+import viva.la.circle.remap.RemapClock
+import viva.la.circle.remap.RemapDiag
+import viva.la.circle.remap.RemapSession
+import viva.la.circle.remap.RemapWindows
+import viva.la.circle.remap.WindowSnap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -45,7 +54,6 @@ class BlueLMInterceptorService : AccessibilityService() {
     private var powerLongFired = false
     private var pendingPowerLongJob: Job? = null
     private var pendingBlueLMLaunchJob: Job? = null
-    private var lastCopilotHammerMs: Long = 0L
     private var sawPowerKeyThisSession = false
     private var loggedMissingPowerKey = false
 
@@ -61,7 +69,6 @@ class BlueLMInterceptorService : AccessibilityService() {
 
     @Volatile
     private var blueLMActionLaunched = false
-    private var backPressCount = 0
 
     private val screenOffReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -80,7 +87,6 @@ class BlueLMInterceptorService : AccessibilityService() {
                 pendingBlueLMLaunchJob?.cancel()
                 pendingBlueLMLaunchJob = null
                 blueLMActionLaunched = false
-                backPressCount = 0
                 InterceptorStateRepository.diag("FG", "screen-off, cleared foreground")
             }
         }
@@ -88,38 +94,13 @@ class BlueLMInterceptorService : AccessibilityService() {
 
     companion object {
         const val BLUELM_COOLDOWN_MS = 1500L
-        const val CAMERA_COOLDOWN_MS = 150L
-        const val CAMERA_FOREGROUND_GRACE_MS = 1200L
-
-        /** Hard cap so a stale getWindows() result cannot restart a BACK storm. */
+        const val DOUBLE_PRESS_WINDOW_MS = KeyRemapPolicy.DOUBLE_PRESS_WINDOW_MS
+        const val POWER_LONG_PRESS_MS = KeyRemapPolicy.POWER_LONG_PRESS_MS
+        const val CAMERA_COOLDOWN_MS = KeyRemapPolicy.CAMERA_COOLDOWN_MS
+        const val CAMERA_FOREGROUND_GRACE_MS = KeyRemapPolicy.CAMERA_FOREGROUND_GRACE_MS
         const val MAX_DISMISS_BACKS = 3
-
-        /**
-         * HwCTS ACTION_TILE_TRIGGER already sends GLOBAL_ACTION_BACK (it closes QS).
-         * One of ours first, then the tile BACK, while Copilot is still up. Waiting until
-         * Copilot is gone makes the tile BACK hit the app and land on the launcher.
-         */
-        const val HWCTS_DISMISS_BACKS = 1
-
-        /** Poll until Copilot is gone, then fire the TargetAction. */
-        const val COPILOT_DISMISS_TIMEOUT_MS = 400L
-        const val COPILOT_POLL_MS = 30L
-
-        /** Do not BACK faster than this while dismissing a float overlay. */
+        const val HWCTS_DISMISS_BACKS = RemapSession.HWCTS_DISMISS_BACKS
         const val COPILOT_HAMMER_MIN_INTERVAL_MS = 40L
-
-        /**
-         * How long a single-press action waits before firing, so a double press can cancel it.
-         *
-         * The system signals a double press with a separate keycode (550 KEYCODE_DOUBLE_CLICK on
-         * OriginOS 6) that arrives with the second shutter DOWN — measured 84-107ms after the
-         * first shutter UP. 250ms leaves better than 2x margin while keeping single-press latency
-         * below the platform's 300ms double-tap timeout.
-         */
-        const val DOUBLE_PRESS_WINDOW_MS = 250L
-
-        /** Vivo Copilot is bound to long-press power. Fire before the ROM opens it. */
-        const val POWER_LONG_PRESS_MS = 500L
 
         val KNOWN_CAMERA_PACKAGES = setOf(
             "com.vivo.camera",
@@ -155,71 +136,34 @@ class BlueLMInterceptorService : AccessibilityService() {
          * A closing overlay that is still somewhere in the list must not count — that is what
          * caused extra BACKs to fall through into the user's app on Huawei.
          */
-        fun containsCopilotWindow(packageNames: List<String?>, ownPackage: String): Boolean {
-            val top = packageNames.firstOrNull { !it.isNullOrEmpty() }
-            return InterceptedAssistant.isInterceptedAssistant(top, null, ownPackage)
-        }
+        fun containsCopilotWindow(packageNames: List<String?>, ownPackage: String): Boolean =
+            RemapSession.containsAssistantWindow(packageNames, ownPackage)
 
         fun isAssistantTopWindow(topPackage: String?, ownPackage: String): Boolean =
-            InterceptedAssistant.isInterceptedAssistant(topPackage, null, ownPackage)
+            RemapSession.isAssistantTopWindow(topPackage, ownPackage)
 
-        /**
-         * Stop BACKs once the top window is known and is not the assistant.
-         * Covers both "user app restored" and "overshot into launcher".
-         */
         fun shouldStopDismissBacks(
             topPackage: String?,
-            @Suppress("UNUSED_PARAMETER") preAssistPackage: String?,
+            preAssistPackage: String?,
             ownPackage: String,
-        ): Boolean {
-            if (topPackage.isNullOrBlank()) return false
-            return !InterceptedAssistant.isInterceptedAssistant(topPackage, null, ownPackage)
-        }
+        ): Boolean = RemapSession.shouldStopDismissBacks(topPackage, preAssistPackage, ownPackage)
 
         fun isDismissOvershoot(
             topPackage: String?,
             preAssistPackage: String?,
             ownPackage: String,
-        ): Boolean {
-            if (topPackage.isNullOrBlank()) return false
-            if (InterceptedAssistant.isInterceptedAssistant(topPackage, null, ownPackage)) return false
-            if (preAssistPackage != null &&
-                topPackage.equals(preAssistPackage, ignoreCase = true)
-            ) {
-                return false
-            }
-            return true
-        }
+        ): Boolean = RemapSession.isDismissOvershoot(topPackage, preAssistPackage, ownPackage)
 
         fun copilotDismissBackBudget(
             action: TargetAction,
-            profile: VendorProfile = VendorProfile.current(),
-        ): Int {
-            return if (action == TargetAction.HWCTS) HWCTS_DISMISS_BACKS else profile.maxDismissBacks
-        }
+            profile: VendorProfile = DeviceRemapProfile.current(),
+        ): Int = RemapSession.dismissBackBudget(action, profile.maxDismissBacks)
 
-        fun assistantDismissTimeoutMs(profile: VendorProfile = VendorProfile.current()): Long =
-            profile.dismissTimeoutMs
-
-        fun assistantPollMs(profile: VendorProfile = VendorProfile.current()): Long =
-            profile.pollMs
-
-        fun assistantHammerMinIntervalMs(profile: VendorProfile = VendorProfile.current()): Long =
-            profile.hammerMinIntervalMs
-
-        fun assistantFocusWaitTimeoutMs(profile: VendorProfile = VendorProfile.current()): Long =
-            profile.focusWaitTimeoutMs
-
-        fun assistantFocusPollMs(profile: VendorProfile = VendorProfile.current()): Long =
-            profile.focusPollMs
-
-        /** BACK only while the assistant is the top window — never at the app underneath. */
         fun shouldPressDismissBack(topPackage: String?, ownPackage: String): Boolean =
-            isAssistantTopWindow(topPackage, ownPackage)
+            RemapSession.shouldPressDismissBack(topPackage, ownPackage)
 
-        fun shouldWaitUntilCopilotGone(action: TargetAction): Boolean {
-            return action != TargetAction.HWCTS
-        }
+        fun shouldWaitUntilCopilotGone(action: TargetAction): Boolean =
+            RemapSession.shouldWaitUntilGone(action)
 
         fun canDismissCopilotBack(
             actionLaunched: Boolean,
@@ -228,15 +172,16 @@ class BlueLMInterceptorService : AccessibilityService() {
             elapsedSinceLastBackMs: Long,
             maxBacks: Int = MAX_DISMISS_BACKS,
             minIntervalMs: Long = COPILOT_HAMMER_MIN_INTERVAL_MS,
-            /** First BACK after a wake event: presence is already proven by the event. */
             assumePresent: Boolean = false,
-        ): Boolean {
-            if (actionLaunched) return false
-            if (backPressCount >= maxBacks) return false
-            if (!assumePresent && !copilotPresent) return false
-            if (backPressCount > 0 && elapsedSinceLastBackMs < minIntervalMs) return false
-            return true
-        }
+        ): Boolean = RemapSession.canDismissBack(
+            actionLaunched = actionLaunched,
+            backPressCount = backPressCount,
+            assistantPresent = copilotPresent,
+            elapsedSinceLastBackMs = elapsedSinceLastBackMs,
+            maxBacks = maxBacks,
+            minIntervalMs = minIntervalMs,
+            assumePresent = assumePresent,
+        )
 
         fun isCameraApp(packageName: String?, className: String?, ownPackageName: String = ""): Boolean {
             val pkg = packageName?.lowercase() ?: ""
@@ -275,10 +220,6 @@ class BlueLMInterceptorService : AccessibilityService() {
 
         fun isPowerKey(keyCode: Int): Boolean = keyCode == KeyEvent.KEYCODE_POWER
 
-        fun isPowerLongPress(heldMs: Long, thresholdMs: Long = POWER_LONG_PRESS_MS): Boolean {
-            return heldMs >= thresholdMs
-        }
-
         fun isAssistSessionForeground(packageName: String?, className: String? = null): Boolean {
             val cls = className.orEmpty()
             if (cls.contains("VoiceInteractionWindow")) return true
@@ -298,11 +239,17 @@ class BlueLMInterceptorService : AccessibilityService() {
             foregroundSinceMs: Long,
             nowMs: Long,
             ownPackage: String,
-        ): Boolean {
-            if (!skipWhileCameraOpen) return false
-            if (!isCameraApp(foregroundPackage, null, ownPackage)) return false
-            return (nowMs - foregroundSinceMs) >= CAMERA_FOREGROUND_GRACE_MS
-        }
+        ): Boolean = KeyRemapPolicy.shouldPassThroughCameraKey(
+            skipWhileCameraOpen = skipWhileCameraOpen,
+            foregroundPackage = foregroundPackage,
+            foregroundSinceMs = foregroundSinceMs,
+            nowMs = nowMs,
+            ownPackage = ownPackage,
+            isCameraApp = ::isCameraApp,
+        )
+
+        fun isPowerLongPress(heldMs: Long, thresholdMs: Long = POWER_LONG_PRESS_MS): Boolean =
+            KeyRemapPolicy.isPowerLongPress(heldMs, thresholdMs)
 
         fun formatKeyEvent(event: KeyEvent): String {
             val action = when (event.action) {
@@ -445,12 +392,10 @@ class BlueLMInterceptorService : AccessibilityService() {
                     val firedAt = System.currentTimeMillis()
                     lastCameraInterceptMs = firedAt
                     InterceptorStateRepository.recordInterception("HardwareKey_$keyCode", firedAt)
-                    val fired = ActionExecutionEngine.executeAction(
+                    val fired = TargetActionFire.forService(
                         context = this@BlueLMInterceptorService,
-                        action = state.cameraAction,
-                        specificPackage = state.cameraSpecificPackage,
                         service = this@BlueLMInterceptorService,
-                    )
+                    ).fire(state.cameraAction, state.cameraSpecificPackage)
                     InterceptorStateRepository.diag(
                         "KEY",
                         "fired ${state.cameraAction} single-press held=${heldMs}ms result=$fired",
@@ -520,12 +465,10 @@ class BlueLMInterceptorService : AccessibilityService() {
         lastBlueLMInterceptMs = now
         InterceptorStateRepository.recordInterception("PowerLong_$keyCode", now)
         val current = InterceptorStateRepository.serviceState.value
-        val fired = ActionExecutionEngine.executeAction(
+        val fired = TargetActionFire.forService(
             context = this,
-            action = current.blueLMAction,
-            specificPackage = current.blueLMSpecificPackage,
             service = this,
-        )
+        ).fire(current.blueLMAction, current.blueLMSpecificPackage)
         InterceptorStateRepository.diag(
             "KEY",
             "fired ${current.blueLMAction} power-long held=${heldMs}ms result=$fired",
@@ -586,7 +529,6 @@ class BlueLMInterceptorService : AccessibilityService() {
 
             lastBlueLMInterceptMs = now
             blueLMActionLaunched = false
-            backPressCount = 0
             val preAssistPackage = lastUserForegroundPackage
             InterceptorStateRepository.recordInterception(packageName, now)
             if (!sawPowerKeyThisSession && !loggedMissingPowerKey) {
@@ -606,93 +548,35 @@ class BlueLMInterceptorService : AccessibilityService() {
             pendingBlueLMLaunchJob?.cancel()
             pendingBlueLMLaunchJob = serviceScope.launch {
                 try {
-                    val profile = VendorProfile.current()
-                    val backBudget = copilotDismissBackBudget(state.blueLMAction, profile)
-                    val pollMs = assistantPollMs(profile)
-                    val hammerMs = assistantHammerMinIntervalMs(profile)
-                    val focusWaitMs = assistantFocusWaitTimeoutMs(profile)
-                    val focusPollMs = assistantFocusPollMs(profile)
-
-                    // Wait until the assistant is top, then BACK. assumePresent still skips a
-                    // second full window walk — it must not skip the top-window condition.
-                    var assistantBecameTop = false
-                    val focusDeadline = System.currentTimeMillis() + focusWaitMs
-                    while (System.currentTimeMillis() <= focusDeadline) {
-                        val snap = windowSnapshot()
-                        InterceptorStateRepository.diag(
-                            "BLM",
-                            "focus windows=[${snap.packages.joinToString()}] " +
-                                "top=${snap.topPackage ?: "-"}",
-                        )
-                        if (shouldPressDismissBack(snap.topPackage, ownPkg)) {
-                            assistantBecameTop = true
-                            if (backBudget > 0) {
-                                dismissCopilotBack(
-                                    reason = "initial",
-                                    maxBacks = backBudget,
-                                    minIntervalMs = hammerMs,
-                                    assumePresent = true,
-                                    knownTopPackage = snap.topPackage,
-                                    knownPackages = snap.packages,
-                                )
+                    val profile = DeviceRemapProfile.current()
+                    val timing = DeviceRemapProfile.timing(profile)
+                    val session = RemapSession(
+                        windows = RemapWindows { toRemapSnap(windowSnapshot()) },
+                        back = RemapBack { performGlobalAction(GLOBAL_ACTION_BACK) },
+                        clock = object : RemapClock {
+                            override fun nowMs(): Long = System.currentTimeMillis()
+                            override suspend fun delayMs(ms: Long) {
+                                delay(ms.milliseconds)
                             }
-                            break
-                        }
-                        if (System.currentTimeMillis() + focusPollMs > focusDeadline) break
-                        delay(focusPollMs.milliseconds)
+                        },
+                        fire = TargetActionFire.forService(
+                            context = this@BlueLMInterceptorService,
+                            service = this@BlueLMInterceptorService,
+                        ),
+                        diag = RemapDiag { kind, detail ->
+                            InterceptorStateRepository.diag(kind, detail)
+                        },
+                        ownPackage = ownPkg,
+                    )
+                    val fired = session.run(
+                        action = state.blueLMAction,
+                        specificPackage = state.blueLMSpecificPackage,
+                        preAssistPackage = preAssistPackage,
+                        timing = timing,
+                    )
+                    if (fired) {
+                        blueLMActionLaunched = true
                     }
-                    if (!assistantBecameTop) {
-                        InterceptorStateRepository.diag(
-                            "BLM",
-                            "assistant never top within ${focusWaitMs}ms, skip BACK",
-                        )
-                    } else if (shouldWaitUntilCopilotGone(state.blueLMAction)) {
-                        val deadline = System.currentTimeMillis() + assistantDismissTimeoutMs(profile)
-                        while (System.currentTimeMillis() < deadline) {
-                            delay(pollMs.milliseconds)
-                            val snap = windowSnapshot()
-                            InterceptorStateRepository.diag(
-                                "BLM",
-                                "poll windows=[${snap.packages.joinToString()}] " +
-                                    "top=${snap.topPackage ?: "-"}",
-                            )
-                            if (isDismissOvershoot(snap.topPackage, preAssistPackage, ownPkg)) {
-                                InterceptorStateRepository.diag(
-                                    "BLM",
-                                    "stop BACK: overshoot top=${snap.topPackage} " +
-                                        "preAssist=${preAssistPackage ?: "-"}",
-                                )
-                                break
-                            }
-                            if (!shouldPressDismissBack(snap.topPackage, ownPkg)) {
-                                InterceptorStateRepository.diag(
-                                    "BLM",
-                                    "stop BACK: assistant gone top=${snap.topPackage ?: "-"}",
-                                )
-                                break
-                            }
-                            dismissCopilotBack(
-                                reason = "poll",
-                                maxBacks = backBudget,
-                                minIntervalMs = hammerMs,
-                                assumePresent = true,
-                                knownTopPackage = snap.topPackage,
-                                knownPackages = snap.packages,
-                            )
-                        }
-                        val settleMs = CircleToSearch.extraSettleMs(state.blueLMAction)
-                        if (settleMs > 0) delay(settleMs.milliseconds)
-                    }
-
-                    val endSnap = windowSnapshot()
-                    if (isAssistantTopWindow(endSnap.topPackage, ownPkg)) {
-                        InterceptorStateRepository.diag(
-                            "BLM",
-                            "assistant still top after $backPressCount backs " +
-                                "top=${endSnap.topPackage}",
-                        )
-                    }
-                    fireBlueLMAction(state)
                 } finally {
                     pendingBlueLMLaunchJob = null
                 }
@@ -704,6 +588,9 @@ class BlueLMInterceptorService : AccessibilityService() {
         val topPackage: String?,
         val packages: List<String?>,
     )
+
+    private fun toRemapSnap(snap: WindowSnapshot): WindowSnap =
+        WindowSnap(topPackage = snap.topPackage, packages = snap.packages)
 
     /**
      * Prefer the active/focused window's package (one binder call). Fall back to scanning
@@ -765,76 +652,6 @@ class BlueLMInterceptorService : AccessibilityService() {
             windows?.firstOrNull { it.id == id }
         } catch (_: Exception) {
             null
-        }
-    }
-
-    private fun topWindowPackage(): String? = windowSnapshot().topPackage
-
-    private fun dismissCopilotBack(
-        reason: String,
-        maxBacks: Int = MAX_DISMISS_BACKS,
-        minIntervalMs: Long = COPILOT_HAMMER_MIN_INTERVAL_MS,
-        assumePresent: Boolean = false,
-        knownTopPackage: String? = null,
-        knownPackages: List<String?>? = null,
-    ): Boolean {
-        val now = System.currentTimeMillis()
-        val snap = when {
-            knownTopPackage != null || knownPackages != null -> WindowSnapshot(
-                topPackage = knownTopPackage ?: knownPackages?.firstOrNull { !it.isNullOrEmpty() },
-                packages = knownPackages.orEmpty(),
-            )
-            assumePresent -> null
-            else -> windowSnapshot()
-        }
-        val present = assumePresent || isAssistantTopWindow(snap?.topPackage, ownPackageName())
-        if (!canDismissCopilotBack(
-                actionLaunched = blueLMActionLaunched,
-                backPressCount = backPressCount,
-                copilotPresent = present,
-                elapsedSinceLastBackMs = now - lastCopilotHammerMs,
-                maxBacks = maxBacks,
-                minIntervalMs = minIntervalMs,
-                assumePresent = assumePresent,
-            )
-        ) {
-            if (!present && !assumePresent) {
-                InterceptorStateRepository.diag(
-                    "BLM",
-                    "skip BACK ($reason): assistant not top top=${snap?.topPackage ?: "-"}",
-                )
-            }
-            return false
-        }
-        lastCopilotHammerMs = now
-        backPressCount++
-        val backOk = performGlobalAction(GLOBAL_ACTION_BACK)
-        val windowsDetail = when {
-            assumePresent -> "assumePresent=true"
-            snap != null -> "windows=[${snap.packages.joinToString()}] top=${snap.topPackage ?: "-"}"
-            else -> ""
-        }
-        InterceptorStateRepository.diag(
-            "BLM",
-            "BACK=$backOk reason=$reason count=$backPressCount $windowsDetail".trim(),
-        )
-        return backOk
-    }
-
-    private suspend fun fireBlueLMAction(state: InterceptorServiceState) {
-        InterceptorStateRepository.diag(
-            "CTS",
-            "top=${topWindowPackage()} backs=$backPressCount",
-        )
-        val fired = ActionExecutionEngine.executeAction(
-            context = this,
-            action = state.blueLMAction,
-            specificPackage = state.blueLMSpecificPackage,
-            service = this,
-        )
-        InterceptorStateRepository.diag("BLM", "launched ${state.blueLMAction} result=$fired")
-        if (fired) {
-            blueLMActionLaunched = true
         }
     }
 

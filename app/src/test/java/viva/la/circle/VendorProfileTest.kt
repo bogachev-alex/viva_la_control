@@ -62,7 +62,7 @@ class VendorProfileTest {
         )
         assertEquals(
             400L,
-            BlueLMInterceptorService.assistantDismissTimeoutMs(VendorProfile.HUAWEI),
+            VendorProfile.HUAWEI.dismissTimeoutMs,
         )
         assertEquals(30L, VendorProfile.VIVO.pollMs)
         assertEquals(40L, VendorProfile.VIVO.hammerMinIntervalMs)

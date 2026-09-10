@@ -49,9 +49,6 @@ class MainActivity : ComponentActivity() {
                     onSkipCameraAppChange = { skip ->
                         InterceptorStateRepository.setSkipCameraApp(this, skip)
                     },
-                    onDismissDelayChange = { delayMs ->
-                        InterceptorStateRepository.setDismissDelayMs(this, delayMs)
-                    },
                     onDiagnosticsEnabledChange = { enabled ->
                         InterceptorStateRepository.setDiagnosticsEnabled(enabled)
                     },
@@ -96,8 +93,7 @@ class MainActivity : ComponentActivity() {
         val header = buildString {
             appendLine("device=${Build.MANUFACTURER} ${Build.MODEL} sdk=${Build.VERSION.SDK_INT}")
             appendLine(
-                "os=${state.detectedOsLabel} vendor=${state.detectedVendorId.ifEmpty { "-" }} " +
-                    "dismissDelay=${state.dismissDelayMs}ms",
+                "os=${state.detectedOsLabel} vendor=${state.detectedVendorId.ifEmpty { "-" }}",
             )
             appendLine("blueLM=${state.blueLMAction} ${state.blueLMSpecificPackage ?: ""}")
             appendLine("camera=${state.cameraAction} ${state.cameraSpecificPackage ?: ""}")

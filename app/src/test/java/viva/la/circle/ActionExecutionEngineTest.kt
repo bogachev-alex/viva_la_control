@@ -103,13 +103,6 @@ class ActionExecutionEngineTest {
         InterceptorStateRepository.setSkipCameraApp(context = null, skip = false)
         assertEquals(false, InterceptorStateRepository.serviceState.value.skipCameraApp)
 
-        InterceptorStateRepository.setDismissDelayMs(context = null, delayMs = 0)
-        assertEquals(0, InterceptorStateRepository.serviceState.value.dismissDelayMs)
-        InterceptorStateRepository.setDismissDelayMs(context = null, delayMs = 400)
-        assertEquals(400, InterceptorStateRepository.serviceState.value.dismissDelayMs)
-        InterceptorStateRepository.setDismissDelayMs(context = null, delayMs = 900)
-        assertEquals(500, InterceptorStateRepository.serviceState.value.dismissDelayMs)
-
         assertNull(InterceptorStateRepository.sanitizeTestPackage("com.tosharoki.hwcts"))
         assertEquals("com.openai.chatgpt", InterceptorStateRepository.sanitizeTestPackage("com.openai.chatgpt"))
 
