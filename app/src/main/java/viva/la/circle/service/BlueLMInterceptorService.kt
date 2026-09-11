@@ -75,13 +75,18 @@ class BlueLMInterceptorService : AccessibilityService() {
         var observing: Boolean = false
         var skipFired: Boolean = false
         var pendingSkipJob: Job? = null
+        var pendingVolumeGuardJob: Job? = null
+        var volumeBaseline: MediaPlaybackGate.VolumeSnapshot? = null
 
         fun reset() {
             pendingSkipJob?.cancel()
             pendingSkipJob = null
+            pendingVolumeGuardJob?.cancel()
+            pendingVolumeGuardJob = null
             consuming = false
             observing = false
             skipFired = false
+            volumeBaseline = null
         }
     }
 
@@ -678,6 +683,7 @@ class BlueLMInterceptorService : AccessibilityService() {
                     repeatCount = event.repeatCount,
                     alreadyConsuming = gesture.consuming,
                     alreadyObserving = gesture.observing,
+                    skipFired = gesture.skipFired,
                 )
                 if (decision == VolumeKeyPolicy.DownDecision.PassThrough &&
                     event.repeatCount == 0 &&
@@ -698,9 +704,12 @@ class BlueLMInterceptorService : AccessibilityService() {
                 val skipFired = gesture.skipFired
                 gesture.pendingSkipJob?.cancel()
                 gesture.pendingSkipJob = null
+                gesture.pendingVolumeGuardJob?.cancel()
+                gesture.pendingVolumeGuardJob = null
                 gesture.consuming = false
                 gesture.observing = false
                 gesture.skipFired = false
+                gesture.volumeBaseline = null
                 val decision = VolumeKeyPolicy.onUp(
                     wasConsuming = wasConsuming,
                     wasObserving = wasObserving,
@@ -726,19 +735,53 @@ class BlueLMInterceptorService : AccessibilityService() {
                 gesture.observing = true
                 gesture.consuming = false
                 gesture.skipFired = false
+                gesture.volumeBaseline = MediaPlaybackGate.captureVolumeSnapshot(this)
                 gesture.pendingSkipJob?.cancel()
                 val timeout = state.volumeLongPressMs
                 gesture.pendingSkipJob = serviceScope.launch {
                     delay(timeout)
                     if (!gesture.observing || gesture.skipFired) return@launch
                     gesture.skipFired = true
+                    val baseline = gesture.volumeBaseline
+                    if (baseline != null) {
+                        val restored = MediaPlaybackGate.restoreVolumeSnapshot(
+                            this@BlueLMInterceptorService,
+                            baseline,
+                        )
+                        InterceptorStateRepository.diag(
+                            "VOL",
+                            "restore volume before skip ok=$restored " +
+                                "stream=${baseline.streamVolume}",
+                        )
+                    }
                     fireVolumeSkip(raise = raise, haptic = state.volumeHapticEnabled)
+                    // System may keep ramping volume until UP — hold baseline until release.
+                    gesture.pendingVolumeGuardJob?.cancel()
+                    if (baseline != null) {
+                        gesture.pendingVolumeGuardJob = serviceScope.launch {
+                            while (gesture.observing && gesture.skipFired) {
+                                MediaPlaybackGate.restoreVolumeSnapshot(
+                                    this@BlueLMInterceptorService,
+                                    baseline,
+                                )
+                                delay(40)
+                            }
+                        }
+                    }
                 }
                 InterceptorStateRepository.diag(
                     "VOL",
-                    "DOWN observe skip ${if (raise) "UP" else "DOWN"} timeout=${timeout}ms (native volume)",
+                    "DOWN observe skip ${if (raise) "UP" else "DOWN"} timeout=${timeout}ms " +
+                        "(native volume, restore on skip)",
                 )
                 return false
+            }
+            VolumeKeyPolicy.DownDecision.SwallowAfterSkip -> {
+                InterceptorStateRepository.diag(
+                    "VOL",
+                    "DOWN swallow after skip ${if (raise) "UP" else "DOWN"}",
+                )
+                return true
             }
             VolumeKeyPolicy.DownDecision.ConsumeShortOnly -> {
                 gesture.consuming = true

@@ -19,6 +19,8 @@ object VolumeKeyPolicy {
         data object ContinueConsuming : DownDecision()
         /** Pass key to OS (native volume) but schedule long-press skip. */
         data object ObserveStartSkipJob : DownDecision()
+        /** After observe-skip fired, swallow further repeats so volume stops ramping. */
+        data object SwallowAfterSkip : DownDecision()
         /** Consume DOWN and schedule long-press skip (short Remap path). */
         data object ConsumeStartSkipJob : DownDecision()
         /** Consume DOWN for short-press Remap only (no skip). */
@@ -64,10 +66,12 @@ object VolumeKeyPolicy {
         repeatCount: Int,
         alreadyConsuming: Boolean,
         alreadyObserving: Boolean,
+        skipFired: Boolean = false,
     ): DownDecision {
         if (!armed) return DownDecision.PassThrough
         if (passThroughVolume) {
-            // Native volume path — never consume. Only arm a skip timer on the first DOWN.
+            // Native volume path — never consume until skip has fired.
+            if (alreadyObserving && skipFired) return DownDecision.SwallowAfterSkip
             if (!canSkip) return DownDecision.PassThrough
             if (repeatCount > 0) return DownDecision.PassThrough
             if (alreadyObserving) return DownDecision.PassThrough

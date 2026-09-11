@@ -19,6 +19,14 @@ import viva.la.circle.service.MediaNotificationListener
  */
 object MediaPlaybackGate {
 
+    /** Captured music / session volume so a long-press skip can undo system ramp. */
+    data class VolumeSnapshot(
+        val streamVolume: Int,
+        val streamMax: Int,
+        val sessionVolume: Int? = null,
+        val sessionMax: Int? = null,
+    )
+
     fun isNotificationListenerEnabled(context: Context): Boolean {
         val expected = MediaNotificationListener.componentName(context)
         val flat = Settings.Secure.getString(
@@ -60,6 +68,55 @@ object MediaPlaybackGate {
     fun skipNext(context: Context): Boolean = dispatchSkip(context, next = true)
 
     fun skipPrevious(context: Context): Boolean = dispatchSkip(context, next = false)
+
+    fun captureVolumeSnapshot(context: Context): VolumeSnapshot {
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val stream = AudioManager.STREAM_MUSIC
+        val streamVolume = audioManager.getStreamVolume(stream)
+        val streamMax = audioManager.getStreamMaxVolume(stream)
+        var sessionVolume: Int? = null
+        var sessionMax: Int? = null
+        if (isNotificationListenerEnabled(context)) {
+            val controller = pickSkipController(context) ?: activeControllers(context).firstOrNull()
+            val info = controller?.playbackInfo
+            if (info != null && info.volumeControl == 2 /* VOLUME_CONTROL_ABSOLUTE */) {
+                sessionVolume = info.currentVolume
+                sessionMax = info.maxVolume
+            }
+        }
+        return VolumeSnapshot(
+            streamVolume = streamVolume,
+            streamMax = streamMax,
+            sessionVolume = sessionVolume,
+            sessionMax = sessionMax,
+        )
+    }
+
+    fun restoreVolumeSnapshot(context: Context, snapshot: VolumeSnapshot): Boolean {
+        var restored = false
+        if (isNotificationListenerEnabled(context) &&
+            snapshot.sessionVolume != null &&
+            snapshot.sessionMax != null
+        ) {
+            val controller = pickSkipController(context) ?: activeControllers(context).firstOrNull()
+            if (controller != null) {
+                try {
+                    val target = snapshot.sessionVolume.coerceIn(0, snapshot.sessionMax)
+                    controller.setVolumeTo(target, 0)
+                    restored = true
+                } catch (_: Exception) {
+                }
+            }
+        }
+        return try {
+            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val target = snapshot.streamVolume.coerceIn(0, snapshot.streamMax)
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
+            true
+        } catch (_: Exception) {
+            restored
+        }
+    }
 
     fun adjustMusicVolume(context: Context, raise: Boolean): Boolean {
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager

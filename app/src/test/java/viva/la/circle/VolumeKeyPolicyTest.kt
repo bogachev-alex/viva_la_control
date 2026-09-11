@@ -102,6 +102,22 @@ class VolumeKeyPolicyTest {
     }
 
     @Test
+    fun downSwallowsRepeatsAfterObserveSkip() {
+        assertEquals(
+            VolumeKeyPolicy.DownDecision.SwallowAfterSkip,
+            VolumeKeyPolicy.onDown(
+                armed = true,
+                canSkip = true,
+                passThroughVolume = true,
+                repeatCount = 3,
+                alreadyConsuming = false,
+                alreadyObserving = true,
+                skipFired = true,
+            ),
+        )
+    }
+
+    @Test
     fun downConsumesSkipJobWhenShortRemap() {
         assertEquals(
             VolumeKeyPolicy.DownDecision.ConsumeStartSkipJob,
