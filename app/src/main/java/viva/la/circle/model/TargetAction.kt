@@ -42,6 +42,11 @@ enum class TargetAction(
     MUTE_TOGGLE(
         titleRes = R.string.action_mute_title,
         descriptionRes = R.string.action_mute_description,
+    ),
+    /** Navigate Home — for Gesture Handle swipe Remap, not BlueLM/Shutter pickers. */
+    HOME(
+        titleRes = R.string.action_home_title,
+        descriptionRes = R.string.action_home_description,
     );
 
     companion object {
@@ -49,5 +54,11 @@ enum class TargetAction(
             if (name == null) return default
             return entries.firstOrNull { it.name == name } ?: default
         }
+
+        /** TargetActions shown for BlueLM / Shutter (excludes nav-only [HOME]). */
+        fun triggerEntries(): List<TargetAction> = entries.filter { it != HOME }
+
+        /** TargetActions for Gesture Handle slot pickers (includes [HOME]). */
+        fun gestureHandleEntries(): List<TargetAction> = entries.toList()
     }
 }

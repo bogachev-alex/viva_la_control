@@ -51,6 +51,21 @@ class MainActivity : ComponentActivity() {
                     onSkipCameraAppChange = { skip ->
                         InterceptorStateRepository.setSkipCameraApp(this, skip)
                     },
+                    onGestureHandleEnabledChange = { enabled ->
+                        InterceptorStateRepository.setGestureHandleEnabled(this, enabled)
+                    },
+                    onGestureHandleOpacityChange = { opacity ->
+                        InterceptorStateRepository.setGestureHandleOpacity(this, opacity)
+                    },
+                    onSelectGestureTapAction = { action, pkg ->
+                        InterceptorStateRepository.setGestureTapAction(this, action, pkg)
+                    },
+                    onSelectGestureLongPressAction = { action, pkg ->
+                        InterceptorStateRepository.setGestureLongPressAction(this, action, pkg)
+                    },
+                    onSelectGestureSwipeUpAction = { action, pkg ->
+                        InterceptorStateRepository.setGestureSwipeUpAction(this, action, pkg)
+                    },
                     onVolumeSkipTracksChange = { enabled ->
                         InterceptorStateRepository.setVolumeSkipTracksEnabled(this, enabled)
                     },

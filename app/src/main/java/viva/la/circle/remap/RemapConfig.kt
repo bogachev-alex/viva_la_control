@@ -22,6 +22,7 @@ object RemapConfig {
         data object Flashlight : FirePreview()
         data object Screenshot : FirePreview()
         data object Mute : FirePreview()
+        data object Home : FirePreview()
     }
 
     enum class HwctsGate {
@@ -73,6 +74,7 @@ object RemapConfig {
             TargetAction.FLASHLIGHT -> FirePreview.Flashlight
             TargetAction.SCREENSHOT -> FirePreview.Screenshot
             TargetAction.MUTE_TOGGLE -> FirePreview.Mute
+            TargetAction.HOME -> FirePreview.Home
         }
     }
 

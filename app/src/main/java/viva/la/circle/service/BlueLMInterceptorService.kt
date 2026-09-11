@@ -15,6 +15,8 @@ import android.view.accessibility.AccessibilityWindowInfo
 import android.media.AudioManager
 import viva.la.circle.engine.ActionExecutionEngine
 import viva.la.circle.engine.VendorProfile
+import viva.la.circle.gesture.GestureHandleController
+import viva.la.circle.gesture.GestureNavEvent
 import viva.la.circle.media.MediaPlaybackGate
 import viva.la.circle.media.VolumeHaptics
 import viva.la.circle.model.BlueLMActionConfig
@@ -62,6 +64,8 @@ class BlueLMInterceptorService : AccessibilityService() {
     private var pendingBlueLMLaunchJob: Job? = null
     private var sawPowerKeyThisSession = false
     private var loggedMissingPowerKey = false
+    private var gestureHandleController: GestureHandleController? = null
+    private var gestureHandleCollectJob: Job? = null
 
     private val volumeUpGesture = VolumeGestureState()
     private val volumeDownGesture = VolumeGestureState()
@@ -313,9 +317,54 @@ class BlueLMInterceptorService : AccessibilityService() {
                 "vendorShutterKeyCodes=$vendorShutterKeyCodes",
             force = true,
         )
+        gestureHandleController = GestureHandleController(this) { event ->
+            handleGestureNavEvent(event)
+        }
+        gestureHandleCollectJob?.cancel()
+        gestureHandleCollectJob = serviceScope.launch {
+            InterceptorStateRepository.serviceState.collect { state ->
+                gestureHandleController?.sync(state)
+            }
+        }
+    }
+
+    private fun handleGestureNavEvent(event: GestureNavEvent) {
+        when (event) {
+            GestureNavEvent.Back -> performGlobalAction(GLOBAL_ACTION_BACK)
+            GestureNavEvent.Recents -> performGlobalAction(GLOBAL_ACTION_RECENTS)
+            GestureNavEvent.Tap -> {
+                val state = InterceptorStateRepository.serviceState.value
+                fireGestureHandleAction(state.gestureTapAction, state.gestureTapSpecificPackage)
+            }
+            GestureNavEvent.LongPress -> {
+                val state = InterceptorStateRepository.serviceState.value
+                fireGestureHandleAction(
+                    state.gestureLongPressAction,
+                    state.gestureLongPressSpecificPackage,
+                )
+            }
+            GestureNavEvent.SwipeUp -> {
+                val state = InterceptorStateRepository.serviceState.value
+                fireGestureHandleAction(state.gestureSwipeUpAction, state.gestureSwipeUpSpecificPackage)
+            }
+        }
+    }
+
+    private fun fireGestureHandleAction(action: TargetAction, specificPackage: String?) {
+        if (action == TargetAction.NONE) return
+        ActionExecutionEngine.executeAction(
+            context = this,
+            action = action,
+            specificPackage = specificPackage,
+            service = this,
+        )
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
+        gestureHandleCollectJob?.cancel()
+        gestureHandleCollectJob = null
+        gestureHandleController?.destroy()
+        gestureHandleController = null
         InterceptorStateRepository.updateRunning(isRunning = false)
         InterceptorStateRepository.diag("SVC", "unbound")
         return super.onUnbind(intent)
@@ -323,6 +372,10 @@ class BlueLMInterceptorService : AccessibilityService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        gestureHandleCollectJob?.cancel()
+        gestureHandleCollectJob = null
+        gestureHandleController?.destroy()
+        gestureHandleController = null
         InterceptorStateRepository.updateRunning(isRunning = false)
         unregisterScreenOffReceiver()
         serviceScope.cancel()

@@ -9,6 +9,8 @@ import viva.la.circle.engine.VendorProfile
 import viva.la.circle.gesture.GestureHandleConfig
 import viva.la.circle.model.BlueLMActionConfig
 import viva.la.circle.model.TargetAction
+import viva.la.circle.model.VolumeShortAction
+import viva.la.circle.remap.VolumeKeyPolicy
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,6 +41,12 @@ data class InterceptorServiceState(
     val detectedOsLabel: String = "",
     val detectedVendorId: String = "",
     val huaweiAppLaunchAcknowledged: Boolean = false,
+    val volumeSkipTracksEnabled: Boolean = false,
+    val volumeShortRemapEnabled: Boolean = false,
+    val volumeLongPressMs: Long = VolumeKeyPolicy.DEFAULT_LONG_PRESS_MS,
+    val volumeHapticEnabled: Boolean = true,
+    val volumeUpShortAction: VolumeShortAction = VolumeShortAction.Volume,
+    val volumeDownShortAction: VolumeShortAction = VolumeShortAction.Volume,
     val gestureHandleEnabled: Boolean = false,
     val gestureHandleOpacity: Int = GestureHandleConfig.DEFAULT_OPACITY_PERCENT,
     val gestureTapAction: TargetAction = GestureHandleConfig.DEFAULT_TAP_ACTION,
@@ -60,6 +68,14 @@ object InterceptorStateRepository {
     private const val KEY_SKIP_CAMERA_APP = "key_skip_camera_app"
     private const val KEY_CAMERA_KEY_CODES = "key_camera_key_codes"
     private const val KEY_HUAWEI_APP_LAUNCH_ACKED = "key_huawei_app_launch_acked"
+    private const val KEY_VOLUME_SKIP_TRACKS = "key_volume_skip_tracks"
+    private const val KEY_VOLUME_SHORT_REMAP = "key_volume_short_remap"
+    private const val KEY_VOLUME_LONG_PRESS_MS = "key_volume_long_press_ms"
+    private const val KEY_VOLUME_HAPTIC = "key_volume_haptic"
+    private const val KEY_VOLUME_UP_SHORT = "key_volume_up_short"
+    private const val KEY_VOLUME_UP_SHORT_PKG = "key_volume_up_short_pkg"
+    private const val KEY_VOLUME_DOWN_SHORT = "key_volume_down_short"
+    private const val KEY_VOLUME_DOWN_SHORT_PKG = "key_volume_down_short_pkg"
     private const val KEY_GESTURE_HANDLE_ENABLED = "key_gesture_handle_enabled"
     private const val KEY_GESTURE_HANDLE_OPACITY = "key_gesture_handle_opacity"
     private const val KEY_GESTURE_TAP_ACTION = "key_gesture_tap_action"
@@ -128,40 +144,102 @@ object InterceptorStateRepository {
                     detectedOsLabel = osLabel,
                     detectedVendorId = profile.id,
                     huaweiAppLaunchAcknowledged = prefs.getBoolean(KEY_HUAWEI_APP_LAUNCH_ACKED, false),
+                    volumeSkipTracksEnabled = prefs.getBoolean(KEY_VOLUME_SKIP_TRACKS, false),
+                    volumeShortRemapEnabled = prefs.getBoolean(KEY_VOLUME_SHORT_REMAP, false),
+                    volumeLongPressMs = VolumeKeyPolicy.normalizeTimeoutMs(
+                        prefs.getLong(KEY_VOLUME_LONG_PRESS_MS, VolumeKeyPolicy.DEFAULT_LONG_PRESS_MS),
+                    ),
+                    volumeHapticEnabled = prefs.getBoolean(KEY_VOLUME_HAPTIC, true),
+                    volumeUpShortAction = VolumeShortAction.fromStored(
+                        prefs.getString(KEY_VOLUME_UP_SHORT, VolumeShortAction.VOLUME_STORED),
+                        sanitizeTestPackage(prefs.getString(KEY_VOLUME_UP_SHORT_PKG, null)),
+                    ),
+                    volumeDownShortAction = VolumeShortAction.fromStored(
+                        prefs.getString(KEY_VOLUME_DOWN_SHORT, VolumeShortAction.VOLUME_STORED),
+                        sanitizeTestPackage(prefs.getString(KEY_VOLUME_DOWN_SHORT_PKG, null)),
+                    ),
                     gestureHandleEnabled = prefs.getBoolean(KEY_GESTURE_HANDLE_ENABLED, false),
                     gestureHandleOpacity = GestureHandleConfig.clampOpacity(
-                        prefs.getInt(
-                            KEY_GESTURE_HANDLE_OPACITY,
-                            GestureHandleConfig.DEFAULT_OPACITY_PERCENT,
-                        ),
+                        prefs.getInt(KEY_GESTURE_HANDLE_OPACITY, GestureHandleConfig.DEFAULT_OPACITY_PERCENT),
                     ),
                     gestureTapAction = TargetAction.fromName(
                         prefs.getString(KEY_GESTURE_TAP_ACTION, null),
                         GestureHandleConfig.DEFAULT_TAP_ACTION,
                     ),
-                    gestureTapSpecificPackage = sanitizeTestPackage(
-                        prefs.getString(KEY_GESTURE_TAP_PKG, null),
-                    ),
+                    gestureTapSpecificPackage = sanitizeTestPackage(prefs.getString(KEY_GESTURE_TAP_PKG, null)),
                     gestureLongPressAction = TargetAction.fromName(
                         prefs.getString(KEY_GESTURE_LONG_PRESS_ACTION, null),
                         GestureHandleConfig.DEFAULT_LONG_PRESS_ACTION,
                     ),
-                    gestureLongPressSpecificPackage = sanitizeTestPackage(
-                        prefs.getString(KEY_GESTURE_LONG_PRESS_PKG, null),
-                    ),
+                    gestureLongPressSpecificPackage = sanitizeTestPackage(prefs.getString(KEY_GESTURE_LONG_PRESS_PKG, null)),
                     gestureSwipeUpAction = TargetAction.fromName(
                         prefs.getString(KEY_GESTURE_SWIPE_UP_ACTION, null),
                         GestureHandleConfig.DEFAULT_SWIPE_UP_ACTION,
                     ),
-                    gestureSwipeUpSpecificPackage = sanitizeTestPackage(
-                        prefs.getString(KEY_GESTURE_SWIPE_UP_PKG, null),
-                    ),
+                    gestureSwipeUpSpecificPackage = sanitizeTestPackage(prefs.getString(KEY_GESTURE_SWIPE_UP_PKG, null)),
                 )
             }
         } catch (_: Exception) {
             // Context might not be available in test environments
         }
     }
+
+    fun setVolumeSkipTracksEnabled(context: Context? = null, enabled: Boolean) {
+        _serviceState.update { it.copy(volumeSkipTracksEnabled = enabled) }
+        persistBoolean(context, KEY_VOLUME_SKIP_TRACKS, enabled)
+    }
+
+    fun setVolumeShortRemapEnabled(context: Context? = null, enabled: Boolean) {
+        _serviceState.update { it.copy(volumeShortRemapEnabled = enabled) }
+        persistBoolean(context, KEY_VOLUME_SHORT_REMAP, enabled)
+    }
+
+    fun setVolumeLongPressMs(context: Context? = null, timeoutMs: Long) {
+        val normalized = VolumeKeyPolicy.normalizeTimeoutMs(timeoutMs)
+        _serviceState.update { it.copy(volumeLongPressMs = normalized) }
+        if (context != null) {
+            try {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .edit()
+                    .putLong(KEY_VOLUME_LONG_PRESS_MS, normalized)
+                    .apply()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    fun setVolumeHapticEnabled(context: Context? = null, enabled: Boolean) {
+        _serviceState.update { it.copy(volumeHapticEnabled = enabled) }
+        persistBoolean(context, KEY_VOLUME_HAPTIC, enabled)
+    }
+
+    fun setVolumeUpShortAction(context: Context? = null, action: VolumeShortAction) {
+        _serviceState.update { it.copy(volumeUpShortAction = action) }
+        persistVolumeShort(context, KEY_VOLUME_UP_SHORT, KEY_VOLUME_UP_SHORT_PKG, action)
+    }
+
+    fun setVolumeDownShortAction(context: Context? = null, action: VolumeShortAction) {
+        _serviceState.update { it.copy(volumeDownShortAction = action) }
+        persistVolumeShort(context, KEY_VOLUME_DOWN_SHORT, KEY_VOLUME_DOWN_SHORT_PKG, action)
+    }
+
+    private fun persistVolumeShort(
+        context: Context?,
+        nameKey: String,
+        pkgKey: String,
+        action: VolumeShortAction,
+    ) {
+        if (context == null) return
+        try {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putString(nameKey, VolumeShortAction.toStoredName(action))
+                .putString(pkgKey, VolumeShortAction.toStoredPackage(action))
+                .apply()
+        } catch (_: Exception) {
+        }
+    }
+
 
     fun setGestureHandleEnabled(context: Context? = null, enabled: Boolean) {
         _serviceState.update { it.copy(gestureHandleEnabled = enabled) }
@@ -174,63 +252,25 @@ object InterceptorStateRepository {
         if (context != null) {
             try {
                 context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                    .edit()
-                    .putInt(KEY_GESTURE_HANDLE_OPACITY, clamped)
-                    .apply()
+                    .edit().putInt(KEY_GESTURE_HANDLE_OPACITY, clamped).apply()
             } catch (_: Exception) {
             }
         }
     }
 
-    fun setGestureTapAction(
-        context: Context? = null,
-        action: TargetAction,
-        specificPackage: String? = null,
-    ) {
-        _serviceState.update {
-            it.copy(gestureTapAction = action, gestureTapSpecificPackage = specificPackage)
-        }
+    fun setGestureTapAction(context: Context? = null, action: TargetAction, specificPackage: String? = null) {
+        _serviceState.update { it.copy(gestureTapAction = action, gestureTapSpecificPackage = specificPackage) }
         persistGestureSlot(context, KEY_GESTURE_TAP_ACTION, KEY_GESTURE_TAP_PKG, action, specificPackage)
     }
 
-    fun setGestureLongPressAction(
-        context: Context? = null,
-        action: TargetAction,
-        specificPackage: String? = null,
-    ) {
-        _serviceState.update {
-            it.copy(
-                gestureLongPressAction = action,
-                gestureLongPressSpecificPackage = specificPackage,
-            )
-        }
-        persistGestureSlot(
-            context,
-            KEY_GESTURE_LONG_PRESS_ACTION,
-            KEY_GESTURE_LONG_PRESS_PKG,
-            action,
-            specificPackage,
-        )
+    fun setGestureLongPressAction(context: Context? = null, action: TargetAction, specificPackage: String? = null) {
+        _serviceState.update { it.copy(gestureLongPressAction = action, gestureLongPressSpecificPackage = specificPackage) }
+        persistGestureSlot(context, KEY_GESTURE_LONG_PRESS_ACTION, KEY_GESTURE_LONG_PRESS_PKG, action, specificPackage)
     }
 
-    fun setGestureSwipeUpAction(
-        context: Context? = null,
-        action: TargetAction,
-        specificPackage: String? = null,
-    ) {
-        _serviceState.update {
-            it.copy(
-                gestureSwipeUpAction = action,
-                gestureSwipeUpSpecificPackage = specificPackage,
-            )
-        }
-        persistGestureSlot(
-            context,
-            KEY_GESTURE_SWIPE_UP_ACTION,
-            KEY_GESTURE_SWIPE_UP_PKG,
-            action,
-            specificPackage,
-        )
+    fun setGestureSwipeUpAction(context: Context? = null, action: TargetAction, specificPackage: String? = null) {
+        _serviceState.update { it.copy(gestureSwipeUpAction = action, gestureSwipeUpSpecificPackage = specificPackage) }
+        persistGestureSlot(context, KEY_GESTURE_SWIPE_UP_ACTION, KEY_GESTURE_SWIPE_UP_PKG, action, specificPackage)
     }
 
     private fun persistGestureSlot(
@@ -243,10 +283,7 @@ object InterceptorStateRepository {
         if (context == null) return
         try {
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .edit()
-                .putString(actionKey, action.name)
-                .putString(pkgKey, specificPackage)
-                .apply()
+                .edit().putString(actionKey, action.name).putString(pkgKey, specificPackage).apply()
         } catch (_: Exception) {
         }
     }

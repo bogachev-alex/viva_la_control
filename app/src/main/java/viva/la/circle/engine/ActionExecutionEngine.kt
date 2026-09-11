@@ -229,6 +229,20 @@ object ActionExecutionEngine {
             TargetAction.MUTE_TOGGLE -> {
                 toggleMute(context)
             }
+
+            TargetAction.HOME -> {
+                if (service != null) {
+                    service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+                    true
+                } else {
+                    Toast.makeText(
+                        context,
+                        "Home action requires Accessibility Service",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    false
+                }
+            }
         }
     }
 

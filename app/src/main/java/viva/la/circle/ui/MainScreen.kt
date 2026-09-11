@@ -98,6 +98,11 @@ fun MainScreen(
     onSelectBlueLMAction: (TargetAction, String?) -> Unit = { _, _ -> },
     onSelectCameraAction: (TargetAction, String?) -> Unit = { _, _ -> },
     onSkipCameraAppChange: (Boolean) -> Unit = {},
+    onGestureHandleEnabledChange: (Boolean) -> Unit = {},
+    onGestureHandleOpacityChange: (Int) -> Unit = {},
+    onSelectGestureTapAction: (TargetAction, String?) -> Unit = { _, _ -> },
+    onSelectGestureLongPressAction: (TargetAction, String?) -> Unit = { _, _ -> },
+    onSelectGestureSwipeUpAction: (TargetAction, String?) -> Unit = { _, _ -> },
     onVolumeSkipTracksChange: (Boolean) -> Unit = {},
     onVolumeShortRemapChange: (Boolean) -> Unit = {},
     onVolumeLongPressMsChange: (Long) -> Unit = {},
@@ -116,6 +121,7 @@ fun MainScreen(
     val scrollState = rememberScrollState()
     var showAppPickerForBlueLM by remember { mutableStateOf(false) }
     var showAppPickerForCamera by remember { mutableStateOf(false) }
+    var showAppPickerForGesture by remember { mutableStateOf<GestureHandleSlot?>(null) }
     var showAppPickerForVolumeUp by remember { mutableStateOf(false) }
     var showAppPickerForVolumeDown by remember { mutableStateOf(false) }
     var advancedExpanded by remember { mutableStateOf(false) }
@@ -192,6 +198,16 @@ fun MainScreen(
                 testEnabled = blueLMConfigured,
             )
 
+            GestureHandleCard(
+                state = state,
+                onEnabledChange = onGestureHandleEnabledChange,
+                onOpacityChange = onGestureHandleOpacityChange,
+                onSelectTapAction = onSelectGestureTapAction,
+                onSelectLongPressAction = onSelectGestureLongPressAction,
+                onSelectSwipeUpAction = onSelectGestureSwipeUpAction,
+                onOpenAppPicker = { slot -> showAppPickerForGesture = slot },
+            )
+
             VolumeKeysCard(
                 state = state,
                 onSkipTracksChange = onVolumeSkipTracksChange,
@@ -243,6 +259,23 @@ fun MainScreen(
                     onSelectCameraAction(TargetAction.SPECIFIC_APP, app.packageName)
                     showAppPickerForCamera = false
                 }
+            )
+        }
+
+        showAppPickerForGesture?.let { slot ->
+            AppPickerDialog(
+                onDismiss = { showAppPickerForGesture = null },
+                onSelectApp = { app ->
+                    when (slot) {
+                        GestureHandleSlot.TAP ->
+                            onSelectGestureTapAction(TargetAction.SPECIFIC_APP, app.packageName)
+                        GestureHandleSlot.LONG_PRESS ->
+                            onSelectGestureLongPressAction(TargetAction.SPECIFIC_APP, app.packageName)
+                        GestureHandleSlot.SWIPE_UP ->
+                            onSelectGestureSwipeUpAction(TargetAction.SPECIFIC_APP, app.packageName)
+                    }
+                    showAppPickerForGesture = null
+                },
             )
         }
 
@@ -730,6 +763,7 @@ fun ActionSelectorList(
     selectedSpecificPkg: String?,
     onSelectAction: (TargetAction) -> Unit,
     onOpenAppPicker: () -> Unit,
+    availableActions: List<TargetAction> = TargetAction.triggerEntries(),
 ) {
     val context = LocalContext.current
     // Name the app "Default Assistant" actually resolves to. Without this the option reads as
@@ -741,7 +775,7 @@ fun ActionSelectorList(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        TargetAction.entries.forEach { action ->
+        availableActions.forEach { action ->
             val isSelected = selectedAction == action
             val icon = getActionIcon(action)
 
@@ -1340,6 +1374,7 @@ fun getActionIcon(action: TargetAction): ImageVector {
         TargetAction.FLASHLIGHT -> AppIcons.FlashOn
         TargetAction.SCREENSHOT -> AppIcons.Screenshot
         TargetAction.MUTE_TOGGLE -> AppIcons.VolumeOff
+        TargetAction.HOME -> AppIcons.Launch
     }
 }
 
@@ -1955,6 +1990,7 @@ fun WillLaunchSummary(action: TargetAction?, specificPackage: String?) {
         RemapConfig.FirePreview.Flashlight -> stringResource(R.string.will_launch_flashlight)
         RemapConfig.FirePreview.Screenshot -> stringResource(R.string.will_launch_screenshot)
         RemapConfig.FirePreview.Mute -> stringResource(R.string.will_launch_mute)
+        RemapConfig.FirePreview.Home -> stringResource(R.string.will_launch_home)
     }
 
     if (summary == null) {
