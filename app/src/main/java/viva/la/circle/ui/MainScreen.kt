@@ -3,6 +3,7 @@ package viva.la.circle.ui
 import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -236,15 +237,16 @@ fun SetupChecklistCard(
     ElevatedCard(
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+            containerColor = MaterialTheme.colorScheme.surface,
         ),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp),
         modifier = modifier.fillMaxWidth(),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
                 text = stringResource(R.string.setup_checklist_title),
@@ -377,30 +379,7 @@ fun StatusBannerCard(
                             },
                         ),
                         style = MaterialTheme.typography.labelMedium,
-                        color = contentColor.copy(alpha = 0.8f),
-                    )
-                }
-
-                Surface(
-                    color = if (isActive) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.error
-                    },
-                    shape = RoundedCornerShape(12.dp),
-                ) {
-                    Text(
-                        text = stringResource(
-                            if (isActive) R.string.badge_active else R.string.badge_disabled,
-                        ),
-                        color = if (isActive) {
-                            MaterialTheme.colorScheme.onPrimary
-                        } else {
-                            MaterialTheme.colorScheme.onError
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        color = contentColor,
                     )
                 }
             }
@@ -408,7 +387,7 @@ fun StatusBannerCard(
             Text(
                 text = statusDescription,
                 style = MaterialTheme.typography.bodyMedium,
-                color = contentColor.copy(alpha = 0.9f),
+                color = contentColor,
             )
 
             Button(
@@ -451,6 +430,7 @@ fun BlueLMActionCard(
         colors = CardDefaults.elevatedCardColors(
             containerColor = MaterialTheme.colorScheme.surface,
         ),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp),
         modifier = modifier.fillMaxWidth(),
     ) {
         Column(
@@ -737,19 +717,33 @@ fun ActionSelectorList(
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
+                        verticalAlignment = Alignment.Top,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        RadioButton(
-                            selected = isSelected,
-                            onClick = { onSelectAction(action) },
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .padding(top = 2.dp)
+                                .size(24.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = { onSelectAction(action) },
+                                modifier = Modifier.requiredSize(20.dp),
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
                         Icon(
                             imageVector = icon,
                             contentDescription = null,
-                            tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp),
+                            tint = if (isSelected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier
+                                .padding(top = 2.dp)
+                                .size(20.dp),
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
@@ -757,7 +751,11 @@ fun ActionSelectorList(
                                 text = stringResource(action.titleRes),
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                color = if (isSelected) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
                             )
                             Text(
                                 text = if (action == TargetAction.DEFAULT_ASSISTANT && systemDefaultLabel != null) {
@@ -778,7 +776,7 @@ fun ActionSelectorList(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(start = 36.dp),
+                                .padding(start = 64.dp),
                         ) {
                             Text(
                                 text = if (!selectedSpecificPkg.isNullOrEmpty()) {
@@ -814,12 +812,12 @@ fun ActionSelectorList(
 
                     if (action == TargetAction.CIRCLE_TO_SEARCH && isSelected) {
                         Spacer(modifier = Modifier.height(8.dp))
-                        CircleToSearchGate(modifier = Modifier.padding(start = 36.dp))
+                        CircleToSearchGate(modifier = Modifier.padding(start = 64.dp))
                     }
 
                     if (action == TargetAction.HWCTS && isSelected) {
                         Spacer(modifier = Modifier.height(8.dp))
-                        HwctsGate(modifier = Modifier.padding(start = 36.dp))
+                        HwctsGate(modifier = Modifier.padding(start = 64.dp))
                     }
 
                     if (action == TargetAction.DEFAULT_ASSISTANT && isSelected) {
@@ -838,7 +836,7 @@ fun ActionSelectorList(
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.padding(start = 36.dp),
+                                modifier = Modifier.padding(start = 64.dp),
                             )
                         }
                     }
