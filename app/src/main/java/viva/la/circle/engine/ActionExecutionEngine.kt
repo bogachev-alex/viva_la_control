@@ -406,7 +406,11 @@ object ActionExecutionEngine {
                 Log.i(TAG, "Launched Google Quick Search Box via getLaunchIntentForPackage")
                 true
             } else {
-                Toast.makeText(context, "Google Assistant app not found", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.toast_google_app_not_found),
+                    Toast.LENGTH_SHORT,
+                ).show()
                 false
             }
         } catch (e: Exception) {
@@ -427,7 +431,7 @@ object ActionExecutionEngine {
      */
     /**
      * True when launching the OS default assistant would re-open an OEM assistant we intercept
-     * (Celia on Huawei, Copilot on Vivo). That is a hard loop: dismiss → assist gesture → same UI.
+     * (an Intercepted assistant). That is a hard loop: dismiss → assist gesture → same Wake UI.
      */
     fun wouldLoopToInterceptedAssistant(
         systemDefaultPackage: String?,

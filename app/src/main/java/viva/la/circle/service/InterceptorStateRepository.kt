@@ -6,6 +6,7 @@ import android.provider.Settings
 import android.text.TextUtils
 import viva.la.circle.engine.OriginOs
 import viva.la.circle.engine.VendorProfile
+import viva.la.circle.model.BlueLMActionConfig
 import viva.la.circle.model.TargetAction
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,7 +26,7 @@ data class InterceptorServiceState(
     val lastInterceptedTime: Long = 0L,
     val interceptedCount: Int = 0,
     val lastInterceptedPackage: String? = null,
-    val blueLMAction: TargetAction = TargetAction.DEFAULT_ASSISTANT,
+    val blueLMAction: TargetAction? = null,
     val blueLMSpecificPackage: String? = null,
     val cameraAction: TargetAction = TargetAction.NONE,
     val cameraSpecificPackage: String? = null,
@@ -64,7 +65,7 @@ object InterceptorStateRepository {
     fun loadFromPreferences(context: Context) {
         try {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val blueLMActionStr = prefs.getString(KEY_BLUELM_ACTION, TargetAction.DEFAULT_ASSISTANT.name)
+            val blueLMActionStr = prefs.getString(KEY_BLUELM_ACTION, null)
             val rawBlueLMSpecificPkg = prefs.getString(KEY_BLUELM_SPECIFIC_PKG, null)
             val cameraActionStr = prefs.getString(KEY_CAMERA_ACTION, TargetAction.NONE.name)
             val rawCameraSpecificPkg = prefs.getString(KEY_CAMERA_SPECIFIC_PKG, null)
@@ -72,11 +73,21 @@ object InterceptorStateRepository {
             val cameraKeyCodes = parseKeyCodes(prefs.getString(KEY_CAMERA_KEY_CODES, null))
             val blueLMSpecificPkg = sanitizeTestPackage(rawBlueLMSpecificPkg)
             val cameraSpecificPkg = sanitizeTestPackage(rawCameraSpecificPkg)
+            val blueLMAction = BlueLMActionConfig.decodeStored(blueLMActionStr)
+            val prefsEditor = prefs.edit()
+            var prefsDirty = false
             if (blueLMSpecificPkg != rawBlueLMSpecificPkg || cameraSpecificPkg != rawCameraSpecificPkg) {
-                prefs.edit()
+                prefsEditor
                     .putString(KEY_BLUELM_SPECIFIC_PKG, blueLMSpecificPkg)
                     .putString(KEY_CAMERA_SPECIFIC_PKG, cameraSpecificPkg)
-                    .apply()
+                prefsDirty = true
+            }
+            if (BlueLMActionConfig.shouldMigrateDefaultAssistant(blueLMActionStr)) {
+                prefsEditor.remove(KEY_BLUELM_ACTION)
+                prefsDirty = true
+            }
+            if (prefsDirty) {
+                prefsEditor.apply()
             }
             val profile = VendorProfile.current()
             val detection = OriginOs.detect()
@@ -91,7 +102,7 @@ object InterceptorStateRepository {
 
             _serviceState.update {
                 it.copy(
-                    blueLMAction = TargetAction.fromName(blueLMActionStr, TargetAction.DEFAULT_ASSISTANT),
+                    blueLMAction = blueLMAction,
                     blueLMSpecificPackage = blueLMSpecificPkg,
                     cameraAction = TargetAction.fromName(cameraActionStr, TargetAction.NONE),
                     cameraSpecificPackage = cameraSpecificPkg,

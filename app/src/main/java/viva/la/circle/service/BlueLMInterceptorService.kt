@@ -14,6 +14,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import viva.la.circle.engine.ActionExecutionEngine
 import viva.la.circle.engine.VendorProfile
+import viva.la.circle.model.BlueLMActionConfig
 import viva.la.circle.model.TargetAction
 import viva.la.circle.remap.TargetActionFire
 import viva.la.circle.remap.DeviceRemapProfile
@@ -60,7 +61,7 @@ class BlueLMInterceptorService : AccessibilityService() {
     @Volatile
     private var foregroundPackage: String? = null
 
-    /** Last non-assistant activity package — the app the user was in before Celia/Copilot. */
+    /** Last non-assistant activity package — the app the user was in before an Intercepted assistant Wake UI. */
     @Volatile
     private var lastUserForegroundPackage: String? = null
 
@@ -275,8 +276,7 @@ class BlueLMInterceptorService : AccessibilityService() {
         registerScreenOffReceiver()
         val info = serviceInfo
         if (info != null) {
-            info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
-                AccessibilityEvent.TYPE_WINDOWS_CHANGED
+            info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
             info.flags = info.flags or
                 AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS or
                 AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
@@ -328,64 +328,115 @@ class BlueLMInterceptorService : AccessibilityService() {
 
         InterceptorStateRepository.diag("KEY", "shutter ${formatKeyEvent(event)} fg=$foregroundPackage")
 
-        if (state.cameraAction == TargetAction.NONE) {
-            InterceptorStateRepository.diag("KEY", "rejected: cameraAction=NONE")
-            return false
-        }
-
         val ownPkg = ownPackageName()
         val now = System.currentTimeMillis()
 
         when (event.action) {
             KeyEvent.ACTION_DOWN -> {
-                if (event.repeatCount > 0) return consumingCameraKey
-                if (shouldPassThroughCameraKey(state.skipCameraApp, foregroundPackage, foregroundSinceMs, now, ownPkg)) {
-                    consumingCameraKey = false
-                    InterceptorStateRepository.diag(
-                        "KEY",
-                        "rejected: camera app foreground for ${now - foregroundSinceMs}ms (grace=${CAMERA_FOREGROUND_GRACE_MS}ms)",
-                    )
-                    return false
-                }
-                // A second DOWN while a single-press action is still pending means this is a
-                // double press. Cancel the pending action and stay out of the way: the system
-                // opens the camera off its own double-click keycode, which we never match.
-                val pending = pendingSingleActionJob
-                if (pending != null) {
-                    pending.cancel()
-                    pendingSingleActionJob = null
-                    suppressNextUpAction = true
-                    InterceptorStateRepository.diag(
-                        "KEY",
-                        "double press: cancelled pending ${state.cameraAction}, camera left to system",
-                    )
-                }
+                val decision = KeyRemapPolicy.onShutterDown(
+                    cameraAction = state.cameraAction,
+                    repeatCount = event.repeatCount,
+                    skipWhileCameraOpen = state.skipCameraApp,
+                    foregroundPackage = foregroundPackage,
+                    foregroundSinceMs = foregroundSinceMs,
+                    nowMs = now,
+                    ownPackage = ownPkg,
+                    isCameraApp = ::isCameraApp,
+                    hasPendingSingleAction = pendingSingleActionJob != null,
+                )
+                return applyShutterDown(decision, state, event.eventTime, event.repeatCount)
+            }
+            KeyEvent.ACTION_UP -> {
+                val wasConsuming = consumingCameraKey
+                consumingCameraKey = false
+                val heldMs = event.eventTime - shutterDownEventTime
+                val decision = KeyRemapPolicy.onShutterUp(
+                    wasConsuming = wasConsuming,
+                    suppressNextUpAction = suppressNextUpAction,
+                    nowMs = now,
+                    lastCameraInterceptMs = lastCameraInterceptMs,
+                    keyCode = event.keyCode,
+                    heldMs = heldMs,
+                )
+                return applyShutterUp(decision, state, heldMs)
+            }
+            else -> return false
+        }
+    }
+
+    private fun applyShutterDown(
+        decision: KeyRemapPolicy.ShutterDecision,
+        state: InterceptorServiceState,
+        eventTime: Long,
+        repeatCount: Int,
+    ): Boolean {
+        when (decision) {
+            KeyRemapPolicy.ShutterDecision.Ignore -> {
+                InterceptorStateRepository.diag("KEY", "rejected: cameraAction=NONE")
+                return false
+            }
+            KeyRemapPolicy.ShutterDecision.PassThrough -> {
+                consumingCameraKey = false
+                val now = System.currentTimeMillis()
+                InterceptorStateRepository.diag(
+                    "KEY",
+                    "rejected: camera app foreground for ${now - foregroundSinceMs}ms " +
+                        "(grace=${CAMERA_FOREGROUND_GRACE_MS}ms)",
+                )
+                return false
+            }
+            KeyRemapPolicy.ShutterDecision.CancelPendingDoublePress -> {
+                pendingSingleActionJob?.cancel()
+                pendingSingleActionJob = null
+                suppressNextUpAction = true
                 consumingCameraKey = true
-                shutterDownEventTime = event.eventTime
+                shutterDownEventTime = eventTime
+                InterceptorStateRepository.diag(
+                    "KEY",
+                    "double press: cancelled pending ${state.cameraAction}, camera left to system",
+                )
+                return true
+            }
+            KeyRemapPolicy.ShutterDecision.ConsumeDown -> {
+                if (repeatCount > 0) return consumingCameraKey
+                consumingCameraKey = true
+                shutterDownEventTime = eventTime
                 if (!suppressNextUpAction) {
                     InterceptorStateRepository.diag("KEY", "DOWN consumed, wait for UP")
                 }
                 return true
             }
-            KeyEvent.ACTION_UP -> {
-                val wasConsuming = consumingCameraKey
-                consumingCameraKey = false
-                if (!wasConsuming) {
-                    InterceptorStateRepository.diag("KEY", "UP ignored: no matching DOWN")
-                    return false
-                }
-                val heldMs = event.eventTime - shutterDownEventTime
-                if (suppressNextUpAction) {
-                    suppressNextUpAction = false
-                    InterceptorStateRepository.diag("KEY", "double press: no single action, held=${heldMs}ms")
-                    return true
-                }
-                if (now - lastCameraInterceptMs < CAMERA_COOLDOWN_MS) {
-                    InterceptorStateRepository.diag("KEY", "rejected: camera cooldown held=${heldMs}ms")
-                    return true
-                }
-                // Defer, so a second press arriving inside DOUBLE_PRESS_WINDOW_MS can cancel this.
-                val keyCode = event.keyCode
+            else -> return false
+        }
+    }
+
+    private fun applyShutterUp(
+        decision: KeyRemapPolicy.ShutterDecision,
+        state: InterceptorServiceState,
+        heldMs: Long,
+    ): Boolean {
+        when (decision) {
+            KeyRemapPolicy.ShutterDecision.Ignore -> {
+                InterceptorStateRepository.diag("KEY", "UP ignored: no matching DOWN")
+                return false
+            }
+            KeyRemapPolicy.ShutterDecision.SuppressUpAfterDoublePress -> {
+                suppressNextUpAction = false
+                InterceptorStateRepository.diag(
+                    "KEY",
+                    "double press: no single action, held=${heldMs}ms",
+                )
+                return true
+            }
+            KeyRemapPolicy.ShutterDecision.ConsumeUpNoFire -> {
+                InterceptorStateRepository.diag(
+                    "KEY",
+                    "rejected: camera cooldown held=${heldMs}ms",
+                )
+                return true
+            }
+            is KeyRemapPolicy.ShutterDecision.ScheduleFire -> {
+                val keyCode = decision.keyCode
                 pendingSingleActionJob = serviceScope.launch {
                     delay(DOUBLE_PRESS_WINDOW_MS.milliseconds)
                     pendingSingleActionJob = null
@@ -398,7 +449,7 @@ class BlueLMInterceptorService : AccessibilityService() {
                     ).fire(state.cameraAction, state.cameraSpecificPackage)
                     InterceptorStateRepository.diag(
                         "KEY",
-                        "fired ${state.cameraAction} single-press held=${heldMs}ms result=$fired",
+                        "fired ${state.cameraAction} single-press held=${decision.heldMs}ms result=$fired",
                     )
                 }
                 return true
@@ -408,19 +459,40 @@ class BlueLMInterceptorService : AccessibilityService() {
     }
 
     private fun handlePowerKey(event: KeyEvent, state: InterceptorServiceState): Boolean {
-        if (state.blueLMAction == TargetAction.NONE) return false
-        if (!isScreenInteractive()) {
-            InterceptorStateRepository.diag("KEY", "power ignored, screen off")
-            return false
-        }
-
-        sawPowerKeyThisSession = true
-        val keyCode = event.keyCode
         when (event.action) {
             KeyEvent.ACTION_DOWN -> {
-                if (event.repeatCount > 0) {
-                    return consumingPowerKey
+                val decision = KeyRemapPolicy.onPowerDown(
+                    blueLMAction = state.blueLMAction,
+                    screenInteractive = isScreenInteractive(),
+                    repeatCount = event.repeatCount,
+                    alreadyConsuming = consumingPowerKey,
+                )
+                if (decision != KeyRemapPolicy.PowerDecision.Ignore) {
+                    sawPowerKeyThisSession = true
                 }
+                return applyPowerDown(decision, event.keyCode)
+            }
+            KeyEvent.ACTION_UP -> {
+                val decision = KeyRemapPolicy.onPowerUp(
+                    wasConsuming = consumingPowerKey,
+                    longFired = powerLongFired,
+                )
+                return applyPowerUp(decision)
+            }
+            else -> return false
+        }
+    }
+
+    private fun applyPowerDown(decision: KeyRemapPolicy.PowerDecision, keyCode: Int): Boolean {
+        when (decision) {
+            KeyRemapPolicy.PowerDecision.Ignore -> {
+                if (!isScreenInteractive()) {
+                    InterceptorStateRepository.diag("KEY", "power ignored, screen off")
+                }
+                return false
+            }
+            KeyRemapPolicy.PowerDecision.ContinueConsuming -> return consumingPowerKey
+            KeyRemapPolicy.PowerDecision.ConsumeDownStartLongJob -> {
                 consumingPowerKey = true
                 powerLongFired = false
                 pendingPowerLongJob?.cancel()
@@ -433,17 +505,26 @@ class BlueLMInterceptorService : AccessibilityService() {
                 InterceptorStateRepository.diag("KEY", "power DOWN consume=true")
                 return true
             }
-            KeyEvent.ACTION_UP -> {
-                if (!consumingPowerKey) return false
+            else -> return false
+        }
+    }
+
+    private fun applyPowerUp(decision: KeyRemapPolicy.PowerDecision): Boolean {
+        when (decision) {
+            KeyRemapPolicy.PowerDecision.Ignore -> return false
+            KeyRemapPolicy.PowerDecision.UpAfterLong -> {
                 pendingPowerLongJob?.cancel()
                 pendingPowerLongJob = null
                 consumingPowerKey = false
-                val longFired = powerLongFired
                 powerLongFired = false
-                if (longFired) {
-                    InterceptorStateRepository.diag("KEY", "power UP after long-press")
-                    return true
-                }
+                InterceptorStateRepository.diag("KEY", "power UP after long-press")
+                return true
+            }
+            KeyRemapPolicy.PowerDecision.ShortPressLock -> {
+                pendingPowerLongJob?.cancel()
+                pendingPowerLongJob = null
+                consumingPowerKey = false
+                powerLongFired = false
                 val locked = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                     performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
                 } else {
@@ -465,13 +546,14 @@ class BlueLMInterceptorService : AccessibilityService() {
         lastBlueLMInterceptMs = now
         InterceptorStateRepository.recordInterception("PowerLong_$keyCode", now)
         val current = InterceptorStateRepository.serviceState.value
+        val action = current.blueLMAction ?: return
         val fired = TargetActionFire.forService(
             context = this,
             service = this,
-        ).fire(current.blueLMAction, current.blueLMSpecificPackage)
+        ).fire(action, current.blueLMSpecificPackage)
         InterceptorStateRepository.diag(
             "KEY",
-            "fired ${current.blueLMAction} power-long held=${heldMs}ms result=$fired",
+            "fired $action power-long held=${heldMs}ms result=$fired",
         )
     }
 
@@ -482,18 +564,11 @@ class BlueLMInterceptorService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
-        val eventType = event.eventType
-        if (eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
-            eventType != AccessibilityEvent.TYPE_WINDOWS_CHANGED
-        ) {
+        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             return
         }
 
         val ownPkg = ownPackageName()
-        if (eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
-            return
-        }
-
         val packageName = event.packageName?.toString() ?: return
         val className = event.className?.toString() ?: ""
         val now = System.currentTimeMillis()
@@ -514,8 +589,12 @@ class BlueLMInterceptorService : AccessibilityService() {
 
         if (InterceptedAssistant.isWakeUi(packageName, className, ownPkg)) {
             val state = InterceptorStateRepository.serviceState.value
-            if (state.blueLMAction == TargetAction.NONE) {
-                InterceptorStateRepository.diag("BLM", "rejected: blueLMAction=NONE pkg=$packageName")
+            val blueLMAction = state.blueLMAction
+            if (!BlueLMActionConfig.shouldRemap(blueLMAction)) {
+                InterceptorStateRepository.diag(
+                    "BLM",
+                    "rejected: blueLMAction=${blueLMAction ?: "unset"} pkg=$packageName",
+                )
                 return
             }
 
@@ -540,8 +619,8 @@ class BlueLMInterceptorService : AccessibilityService() {
             }
             InterceptorStateRepository.diag(
                 "BLM",
-                "copilot wake overlay=${!isLikelyActivityWindow(className)} " +
-                    "action=${state.blueLMAction} pkg=$packageName cls=$className " +
+                "wake overlay=${!isLikelyActivityWindow(className)} " +
+                    "action=$blueLMAction pkg=$packageName cls=$className " +
                     "preAssist=${preAssistPackage ?: "-"}",
             )
 
@@ -569,7 +648,7 @@ class BlueLMInterceptorService : AccessibilityService() {
                         ownPackage = ownPkg,
                     )
                     val fired = session.run(
-                        action = state.blueLMAction,
+                        action = requireNotNull(blueLMAction),
                         specificPackage = state.blueLMSpecificPackage,
                         preAssistPackage = preAssistPackage,
                         timing = timing,

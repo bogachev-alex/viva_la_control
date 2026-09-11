@@ -28,13 +28,6 @@ object OriginOs {
         return "unknown"
     }
 
-    fun defaultDismissDelayMs(major: Int?): Int {
-        return when (major) {
-            5 -> 200
-            else -> 100
-        }
-    }
-
     fun detect(): Detection {
         cached?.let { return it }
         synchronized(this) {

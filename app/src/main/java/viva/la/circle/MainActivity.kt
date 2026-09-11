@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import viva.la.circle.engine.ActionExecutionEngine
 import viva.la.circle.engine.CircleToSearch
+import viva.la.circle.remap.TargetActionFire
 import viva.la.circle.service.InterceptorStateRepository
 import viva.la.circle.ui.MainScreen
 import viva.la.circle.ui.theme.Bluelm_interceptorTheme
@@ -57,7 +58,11 @@ class MainActivity : ComponentActivity() {
                     },
                     onUseCapturedKey = { keyCode ->
                         InterceptorStateRepository.addCameraKeyCode(this, keyCode)
-                        Toast.makeText(this, "Learned key $keyCode", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            this,
+                            getString(R.string.toast_learned_key, keyCode),
+                            Toast.LENGTH_SHORT,
+                        ).show()
                     },
                     onRemoveCapturedKey = { keyCode ->
                         InterceptorStateRepository.removeCameraKeyCode(this, keyCode)
@@ -107,7 +112,11 @@ class MainActivity : ComponentActivity() {
         }
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("bluelm diagnostics", text))
-        Toast.makeText(this, "Copied report + ${events.size} log lines", Toast.LENGTH_SHORT).show()
+        Toast.makeText(
+            this,
+            getString(R.string.toast_copied_report, events.size),
+            Toast.LENGTH_SHORT,
+        ).show()
     }
 
     private fun openAccessibilitySettings() {
@@ -117,16 +126,17 @@ class MainActivity : ComponentActivity() {
             }
             startActivity(intent)
         } catch (e: Exception) {
-            Toast.makeText(this, "Unable to open Accessibility Settings: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                this,
+                getString(R.string.toast_a11y_settings_failed, e.message ?: ""),
+                Toast.LENGTH_SHORT,
+            ).show()
         }
     }
 
     private fun testSelectedAction() {
         val state = InterceptorStateRepository.serviceState.value
-        ActionExecutionEngine.executeAction(
-            context = this,
-            action = state.blueLMAction,
-            specificPackage = state.blueLMSpecificPackage,
-        )
+        val action = state.blueLMAction ?: return
+        TargetActionFire.forService(this).fire(action, state.blueLMSpecificPackage)
     }
 }

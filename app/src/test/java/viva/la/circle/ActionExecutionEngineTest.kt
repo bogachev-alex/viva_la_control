@@ -57,7 +57,7 @@ class ActionExecutionEngineTest {
     @Test
     fun testActionPersistenceAndStateRepository() {
         val initialState = InterceptorStateRepository.serviceState.value
-        assertEquals(TargetAction.DEFAULT_ASSISTANT, initialState.blueLMAction)
+        assertNull(initialState.blueLMAction)
         assertNull(initialState.blueLMSpecificPackage)
         assertEquals(TargetAction.NONE, initialState.cameraAction)
         assertNull(initialState.cameraSpecificPackage)
@@ -109,7 +109,7 @@ class ActionExecutionEngineTest {
         // Reset
         InterceptorStateRepository.reset()
         val resetState = InterceptorStateRepository.serviceState.value
-        assertEquals(TargetAction.DEFAULT_ASSISTANT, resetState.blueLMAction)
+        assertNull(resetState.blueLMAction)
         assertEquals(TargetAction.NONE, resetState.cameraAction)
         assertTrue(resetState.skipCameraApp)
     }
@@ -272,15 +272,12 @@ class ActionExecutionEngineTest {
     }
 
     @Test
-    fun testOriginOsParseMajorAndDelay() {
+    fun testOriginOsParseMajorAndLabel() {
         assertEquals(6, OriginOs.parseMajor("OriginOS 6", "16.0"))
         assertEquals(5, OriginOs.parseMajor("OriginOS 5", "15.0"))
         assertEquals(6, OriginOs.parseMajor(null, "16.0"))
         assertEquals(5, OriginOs.parseMajor(null, "15.0"))
         assertNull(OriginOs.parseMajor(null, null))
-        assertEquals(100, OriginOs.defaultDismissDelayMs(6))
-        assertEquals(200, OriginOs.defaultDismissDelayMs(5))
-        assertEquals(100, OriginOs.defaultDismissDelayMs(null))
         assertEquals("OriginOS 6", OriginOs.label("OriginOS 6", "16.0", 6))
         assertEquals("OriginOS 5", OriginOs.label(null, null, 5))
     }

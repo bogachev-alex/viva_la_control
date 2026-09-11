@@ -1,5 +1,6 @@
 package viva.la.circle.remap
 
+import viva.la.circle.model.BlueLMActionConfig
 import viva.la.circle.model.TargetAction
 
 /**
@@ -26,7 +27,6 @@ object KeyRemapPolicy {
         data object Ignore : PowerDecision()
         data object ConsumeDownStartLongJob : PowerDecision()
         data object ContinueConsuming : PowerDecision()
-        data object LongPressFire : PowerDecision()
         data object ShortPressLock : PowerDecision()
         data object UpAfterLong : PowerDecision()
     }
@@ -76,12 +76,12 @@ object KeyRemapPolicy {
     }
 
     fun onPowerDown(
-        blueLMAction: TargetAction,
+        blueLMAction: TargetAction?,
         screenInteractive: Boolean,
         repeatCount: Int,
         alreadyConsuming: Boolean,
     ): PowerDecision {
-        if (blueLMAction == TargetAction.NONE) return PowerDecision.Ignore
+        if (!BlueLMActionConfig.shouldRemap(blueLMAction)) return PowerDecision.Ignore
         if (!screenInteractive) return PowerDecision.Ignore
         if (repeatCount > 0) {
             return if (alreadyConsuming) PowerDecision.ContinueConsuming else PowerDecision.Ignore

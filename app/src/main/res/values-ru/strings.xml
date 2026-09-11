@@ -1,13 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Viva la Circle</string>
     <string name="accessibility_service_label">Viva la Circle</string>
-    <string name="accessibility_service_description">Перехватывает запуск BlueLM / Vivo Assistant и направляет его в Google Ассистент.</string>
+    <string name="accessibility_service_description">Переназначает Wake UI BlueLM на выбранный TargetAction. Также может Remap затвор (Shutter).</string>
 
     <!-- Target actions -->
-    <string name="action_none_title">Ничего не делать (выкл.)</string>
-    <string name="action_none_description">Отключить перехват для этой кнопки</string>
-    <string name="action_chooser_title">Меню выбора ассистента</string>
-    <string name="action_chooser_description">Открывает диалог со списком установленных голосовых ассистентов</string>
+    <string name="action_none_title">Нет (Pass-through)</string>
+    <string name="action_none_description">Не Remap этот триггер — оставить системе</string>
+    <string name="action_chooser_title">Выбор ассистента</string>
+    <string name="action_chooser_description">Открывает список установленных голосовых ассистентов</string>
     <string name="action_default_title">Ассистент по умолчанию</string>
     <string name="action_default_description">То же, что свайп из угла / долгое нажатие Home (системный жест ассистента)</string>
     <string name="action_cts_title">Circle to Search</string>
@@ -15,19 +16,19 @@
     <string name="action_hwcts_title">HwCTS</string>
     <string name="action_hwcts_description">Круговой поиск HwCTS на текущем экране</string>
     <string name="action_specific_title">Конкретное приложение</string>
-    <string name="action_specific_description">Запускает выбранный пользователем пакет</string>
+    <string name="action_specific_description">Запускает выбранное вами приложение</string>
     <string name="action_flashlight_title">Фонарик вкл./выкл.</string>
     <string name="action_flashlight_description">Переключает вспышку камеры</string>
     <string name="action_screenshot_title">Сделать снимок экрана</string>
-    <string name="action_screenshot_description">Выполняет GLOBAL_ACTION_TAKE_SCREENSHOT</string>
+    <string name="action_screenshot_description">Снимок экрана через спецвозможности</string>
     <string name="action_mute_title">Без звука / со звуком</string>
     <string name="action_mute_description">Переключает громкость медиапотока</string>
 
     <!-- Status banner -->
     <string name="service_active">Служба активна</string>
     <string name="service_inactive">Служба неактивна</string>
-    <string name="service_active_description">Viva la Circle включён в системных настройках и готов запускать выбранное действие при срабатывании триггеров.</string>
-    <string name="service_inactive_description">Нужно разрешение службы спецвозможностей, чтобы обнаруживать запуск Vivo BlueLM и перенаправлять его в выбранный ассистент.</string>
+    <string name="service_active_description">Viva la Circle включён и будет Remap настроенные триггеры в ваш TargetAction.</string>
+    <string name="service_inactive_description">Нужно разрешение спецвозможностей, чтобы видеть Wake UI BlueLM и Remap его в ваш TargetAction.</string>
     <string name="process_running">Процесс запущен</string>
     <string name="waiting_for_trigger">Ожидание триггера</string>
     <string name="action_required">Требуется действие</string>
@@ -37,35 +38,42 @@
     <string name="enable_accessibility">Включить в спецвозможностях</string>
 
     <!-- Target action settings -->
-    <string name="target_action_settings">Настройки целевого действия</string>
-    <string name="bluelm_trigger_action">Действие кнопки BlueLM</string>
-    <string name="launch_delay_after_dismiss">Задержка запуска после закрытия: %1$d мс</string>
-    <string name="launch_delay_hint">BACK сразу скрывает Copilot и продолжает закрывать плавающий оверлей OriginOS 5 на время этой паузы. Затем срабатывает действие (Gemini). Copilot всё равно запускается — прошивка не отдаёт нам кнопку питания — но не должен оставаться на экране.</string>
-    <string name="camera_trigger_action">Действие кнопки камеры</string>
-    <string name="dont_intercept_in_camera">Не перехватывать в приложениях камеры</string>
-    <string name="dont_intercept_in_camera_hint">Пропускать затвор только если приложение камеры уже на переднем плане 1,2 с. Двойное нажатие по-прежнему открывает камеру (KEYCODE_DOUBLE_CLICK не перехватывается).</string>
-    <string name="learned_camera_keys">Выученные клавиши камеры</string>
+    <string name="target_action_settings">TargetAction для BlueLM</string>
+    <string name="bluelm_trigger_action">Когда просыпается BlueLM</string>
+    <string name="setup_checklist_title">Настройка</string>
+    <string name="setup_step_enable_a11y">Включить спецвозможности</string>
+    <string name="setup_step_pick_action">Выбрать TargetAction для BlueLM</string>
+    <string name="setup_step_test">Проверить выбранное действие</string>
+    <string name="pick_action_hint">TargetAction ещё не выбран — Remap выключен, пока не выберете (None можно).</string>
+    <string name="will_launch_unset">Пока ничего — выберите TargetAction выше.</string>
+    <string name="advanced_settings">Дополнительно</string>
+    <string name="advanced_show">Показать дополнительно</string>
+    <string name="advanced_hide">Скрыть дополнительно</string>
+    <string name="camera_trigger_action">TargetAction для затвора</string>
+    <string name="dont_intercept_in_camera">Не Remap в приложениях камеры</string>
+    <string name="dont_intercept_in_camera_hint">Pass-through для затвора, если камера на переднем плане уже 1,2 с. Двойное нажатие по-прежнему открывает камеру.</string>
+    <string name="learned_camera_keys">Выученные коды затвора</string>
     <string name="remove">Удалить</string>
     <string name="stop_key_capture">Остановить захват клавиш</string>
     <string name="capture_next_key">Захватить следующее нажатие</string>
-    <string name="capture_armed_hint">Захват включён. Нажмите затвор наполовину, полностью и grip, если используете. Во время захвата ничего не перехватывается.</string>
+    <string name="capture_armed_hint">Захват включён. Нажмите затвор наполовину, полностью и grip, если используете. Пока идёт захват, Remap не выполняется.</string>
     <string name="test_selected_action">Проверить выбранное действие</string>
     <string name="currently_system_default">Сейчас системный по умолчанию: %1$s</string>
     <string name="app_selected">Приложение: %1$s</string>
     <string name="no_app_selected">Приложение не выбрано</string>
     <string name="change_app">Сменить</string>
     <string name="select_app">Выбрать</string>
-    <string name="default_assistant_loop_warning">Системный по умолчанию (%1$s) — перехватываемый ассистент. Это действие будет снова открывать его после каждого закрытия — выберите «Конкретное приложение» или другое действие.</string>
+    <string name="default_assistant_loop_warning">Системный по умолчанию (%1$s) — Intercepted assistant. Этот TargetAction снова откроет его после каждого закрытия — выберите «Конкретное приложение» или другое действие.</string>
 
     <!-- Will launch -->
-    <string name="will_launch">Будет запущено: %1$s</string>
-    <string name="will_launch_none">Ничего — этот триггер отключён.</string>
+    <string name="will_launch">Сработает: %1$s</string>
+    <string name="will_launch_none">Ничего — Pass-through для этого триггера.</string>
     <string name="will_launch_chooser">Меню выбора ассистента каждый раз.</string>
     <string name="will_launch_default_unset">Системный ассистент по умолчанию (сейчас не задан).</string>
-    <string name="will_launch_default_blocked">Блокировано: %1$s перехватывается — выберите «Конкретное приложение».</string>
+    <string name="will_launch_default_blocked">Блокировано: %1$s — Intercepted assistant; выберите «Конкретное приложение».</string>
     <string name="will_launch_default_app">%1$s — системный по умолчанию, не выбор в этом приложении.</string>
     <string name="will_launch_cts">Google Circle to Search поверх текущего экрана.</string>
-    <string name="will_launch_hwcts_missing">HwCTS не установлен — это действие не сработает на этом устройстве.</string>
+    <string name="will_launch_hwcts_missing">HwCTS не установлен — этот TargetAction не сработает на этом устройстве.</string>
     <string name="will_launch_hwcts">Круговой поиск HwCTS на текущем экране.</string>
     <string name="will_launch_specific_unset">Приложение ещё не выбрано — откат к системному ассистенту.</string>
     <string name="will_launch_flashlight">Переключить фонарик.</string>
@@ -73,8 +81,10 @@
     <string name="will_launch_mute">Переключить беззвучный режим медиа.</string>
 
     <!-- Assistants -->
-    <string name="detected_voice_assistants">Найденные голосовые ассистенты</string>
-    <string name="detected_voice_assistants_hint">Голосовые ассистенты на устройстве, которые можно запускать при перехвате BlueLM:</string>
+    <string name="detected_voice_assistants">Установленные ассистенты</string>
+    <string name="detected_voice_assistants_hint">Нажмите «Исп.», чтобы задать Specific App как TargetAction для BlueLM.</string>
+    <string name="assistants_empty">Голосовые ассистенты на устройстве не найдены.</string>
+    <string name="use_as_target">Исп.</string>
     <string name="badge_default">По умолч.</string>
     <string name="badge_installed">Установлен</string>
     <string name="badge_not_installed">Не установлен</string>
@@ -95,31 +105,32 @@
     <string name="copy">Копировать</string>
     <string name="clear">Очистить</string>
     <string name="waiting_for_key">Ждём клавишу. Нажмите затвор.</string>
-    <string name="no_diag_events">Событий пока нет. Переключите службу спецвозможностей или нажмите клавишу.</string>
+    <string name="no_diag_events">Событий пока нет. Переключите спецвозможности или нажмите клавишу.</string>
     <string name="use_this_key">Использовать эту клавишу (%1$d)</string>
 
     <!-- Statistics -->
-    <string name="interception_statistics">Статистика перехватов</string>
-    <string name="total_intercepts">Всего перехватов</string>
+    <string name="interception_statistics">Статистика Remap</string>
+    <string name="total_intercepts">Всего Remap</string>
     <string name="service_state">Состояние службы</string>
     <string name="running">Работает</string>
     <string name="stopped">Остановлена</string>
-    <string name="last_intercept_time">Время последнего перехвата</string>
-    <string name="last_intercepted_package">Последний перехваченный пакет</string>
+    <string name="last_intercept_time">Время последнего Remap</string>
+    <string name="last_intercepted_package">Пакет последнего Remap</string>
+    <string name="stats_ephemeral_hint">Счётчики сбрасываются при смерти процесса.</string>
     <string name="none_yet">Пока нет</string>
     <string name="never">Никогда</string>
 
     <!-- Onboarding -->
-    <string name="setup_how_it_works">Настройка и как это работает</string>
-    <string name="onboarding_why_title">1. Зачем нужно разрешение спецвозможностей</string>
-    <string name="onboarding_why_body">На Vivo X200 Ultra долгое нажатие кнопки питания по умолчанию запускает встроенный BlueLM / Copilot без штатной переназначения.\n\nOriginOS 6 не передаёт KEYCODE_POWER службе спецвозможностей (клавиши затвора камеры приходят). Поэтому Viva la Circle следит за окном Copilot, закрывает его и запускает выбранное действие.</string>
+    <string name="setup_how_it_works">Как работает Remap</string>
+    <string name="onboarding_why_title">1. Зачем нужны спецвозможности</string>
+    <string name="onboarding_why_body">На Vivo долгое нажатие питания открывает BlueLM без штатного Remap.\n\nOriginOS 6 часто не отдаёт KEYCODE_POWER службе спецвозможностей (клавиши затвора приходят). Viva la Circle следит за Wake UI BlueLM, закрывает его и запускает ваш TargetAction.</string>
     <string name="onboarding_setup_title">2. Пошаговая настройка</string>
-    <string name="onboarding_step_1">Нажмите «Включить в спецвозможностях» выше, чтобы открыть системные настройки.</string>
-    <string name="onboarding_step_2">Прокрутите до раздела «Скачанные приложения» или «Установленные службы».</string>
-    <string name="onboarding_step_3">Найдите и выберите «Viva la Circle» в списке.</string>
-    <string name="onboarding_step_4">Включите переключатель «Использовать Viva la Circle» и подтвердите разрешения.</string>
-    <string name="onboarding_how_title">3. Как работает перехват</string>
-    <string name="onboarding_how_body">После включения служба тихо работает в фоне:\n\n• OriginOS 6 не отдаёт спецвозможностям кнопку питания, поэтому Copilot всё равно открывается. Служба закрывает это окно, ждёт и запускает ваше действие BlueLM.\n• Короткое нажатие Power не меняется (прошивка оставляет его себе).\n• Затвор камеры — отдельный перехват аппаратной клавиши.</string>
+    <string name="onboarding_step_1">Нажмите «Включить в спецвозможностях» выше.</string>
+    <string name="onboarding_step_2">Откройте «Скачанные приложения» / «Установленные службы».</string>
+    <string name="onboarding_step_3">Выберите Viva la Circle.</string>
+    <string name="onboarding_step_4">Включите «Использовать Viva la Circle» и подтвердите.</string>
+    <string name="onboarding_how_title">3. Что происходит при Remap</string>
+    <string name="onboarding_how_body">После включения:\n\n• Если прошивка открывает Wake UI BlueLM, служба закрывает его и запускает ваш TargetAction для BlueLM.\n• Короткое нажатие Power остаётся у прошивки.\n• Remap затвора — по желанию в разделе «Дополнительно».</string>
 
     <!-- Huawei -->
     <string name="huawei_allow_background">Huawei: разрешите фоновый запуск</string>
@@ -130,7 +141,7 @@
 
     <!-- HwCTS gate -->
     <string name="hwcts_not_installed">HwCTS не установлен</string>
-    <string name="hwcts_not_installed_body">Установите com.tosharoki.hwcts или выберите другое действие. На устройствах Huawei без этого пакета круговой поиск HwCTS недоступен.</string>
+    <string name="hwcts_not_installed_body">Установите com.tosharoki.hwcts или выберите другой TargetAction. На устройствах Huawei без этого пакета HwCTS недоступен.</string>
     <string name="hwcts_a11y_off">Служба спецвозможностей HwCTS выключена</string>
     <string name="hwcts_a11y_off_body">Включите службу спецвозможностей HwCTS и попробуйте снова.</string>
     <string name="hwcts_ready">Готово. HwCTS установлен, его служба спецвозможностей включена.</string>
@@ -154,4 +165,10 @@
     <string name="chooser_remember_hint">Выбор запоминается. Изменить можно позже на главном экране.</string>
     <string name="no_assistants_found">Установленные голосовые ассистенты не найдены.</string>
     <string name="close">Закрыть</string>
+
+    <!-- Toasts -->
+    <string name="toast_learned_key">Выучена клавиша %1$d</string>
+    <string name="toast_copied_report">Скопирован отчёт + %1$d строк журнала</string>
+    <string name="toast_a11y_settings_failed">Не удалось открыть спецвозможности: %1$s</string>
+    <string name="toast_google_app_not_found">Приложение Google не найдено</string>
 </resources>

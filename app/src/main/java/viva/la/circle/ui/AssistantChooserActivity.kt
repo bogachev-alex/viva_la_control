@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import viva.la.circle.R
 import viva.la.circle.engine.ActionExecutionEngine
 import viva.la.circle.engine.AssistantAppInfo
+import viva.la.circle.model.TargetAction
+import viva.la.circle.remap.TargetActionFire
 import viva.la.circle.service.InterceptorStateRepository
 import viva.la.circle.ui.theme.AppIcons
 import viva.la.circle.ui.theme.Bluelm_interceptorTheme
@@ -63,14 +65,15 @@ class AssistantChooserActivity : ComponentActivity() {
                 AssistantChooserSheet(
                     onDismiss = { finish() },
                     onSelectAssistant = { assistant ->
+                        val fire = TargetActionFire.forService(this)
                         if (assistant.isInstalled) {
                             InterceptorStateRepository.persistChooserSelection(
                                 context = this,
                                 packageName = assistant.packageName,
                             )
-                            ActionExecutionEngine.launchSpecificApp(this, assistant.packageName)
+                            fire.fire(TargetAction.SPECIFIC_APP, assistant.packageName)
                         } else {
-                            ActionExecutionEngine.launchDefaultAssistant(this)
+                            fire.fire(TargetAction.DEFAULT_ASSISTANT, null)
                         }
                         finish()
                     },

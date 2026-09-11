@@ -3,7 +3,7 @@ package viva.la.circle.ui
 import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,7 +37,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -72,8 +71,10 @@ import viva.la.circle.engine.AppInfo
 import viva.la.circle.engine.AssistantAppInfo
 import viva.la.circle.engine.CircleToSearch
 import viva.la.circle.engine.HuaweiPowerManagement
+import viva.la.circle.model.BlueLMActionConfig
 import viva.la.circle.model.TargetAction
-import viva.la.circle.remap.InterceptedAssistant
+import viva.la.circle.remap.CtsReadiness
+import viva.la.circle.remap.RemapConfig
 import viva.la.circle.service.DiagEvent
 import viva.la.circle.service.InterceptorServiceState
 import viva.la.circle.service.InterceptorStateRepository
@@ -107,6 +108,9 @@ fun MainScreen(
     val scrollState = rememberScrollState()
     var showAppPickerForBlueLM by remember { mutableStateOf(false) }
     var showAppPickerForCamera by remember { mutableStateOf(false) }
+    var advancedExpanded by remember { mutableStateOf(false) }
+    var testAttempted by remember { mutableStateOf(false) }
+    val blueLMConfigured = BlueLMActionConfig.isConfigured(state.blueLMAction)
 
     Scaffold(
         topBar = {
@@ -124,8 +128,8 @@ fun MainScreen(
                         )
                         Text(
                             text = stringResource(R.string.app_name),
+                            style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp,
                         )
                     }
                 },
@@ -135,6 +139,7 @@ fun MainScreen(
             )
         },
         modifier = modifier.fillMaxSize(),
+        containerColor = MaterialTheme.colorScheme.background,
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -144,56 +149,61 @@ fun MainScreen(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            // 1. Accessibility Service Status Banner
             StatusBannerCard(
                 state = state,
                 onOpenSettingsClick = onOpenSettingsClick,
             )
 
-            if (HuaweiPowerManagement.isHuaweiDevice() && !state.huaweiAppLaunchAcknowledged) {
+            if (HuaweiPowerManagement.isHuaweiDevice() &&
+                RemapConfig.needsHuaweiAppLaunchCard(
+                    isHuaweiDevice = true,
+                    acknowledged = state.huaweiAppLaunchAcknowledged,
+                )
+            ) {
                 HuaweiBatteryWhitelistCard(onAlreadyConfigured = onAcknowledgeHuaweiAppLaunch)
             }
 
-            // 2. Target Action Configuration Section
-            TargetActionConfigCard(
+            SetupChecklistCard(
+                a11yEnabled = state.isEnabledInSettings,
+                actionConfigured = blueLMConfigured,
+                testDone = testAttempted && blueLMConfigured,
+            )
+
+            BlueLMActionCard(
                 state = state,
                 onSelectBlueLMAction = onSelectBlueLMAction,
                 onOpenAppPickerForBlueLM = { showAppPickerForBlueLM = true },
+                onTestSelectedAction = {
+                    if (blueLMConfigured) {
+                        testAttempted = true
+                        onTestAssistantClick()
+                    }
+                },
+                testEnabled = blueLMConfigured,
+            )
+
+            AdvancedSection(
+                expanded = advancedExpanded,
+                onToggle = { advancedExpanded = !advancedExpanded },
+                state = state,
+                diagEvents = diagEvents,
                 onSelectCameraAction = onSelectCameraAction,
                 onOpenAppPickerForCamera = { showAppPickerForCamera = true },
                 onSkipCameraAppChange = onSkipCameraAppChange,
                 onCaptureModeChange = onCaptureModeChange,
                 onRemoveCapturedKey = onRemoveCapturedKey,
-                onTestSelectedAction = onTestAssistantClick,
-            )
-
-            DiagnosticsCard(
-                state = state,
-                events = diagEvents,
                 onDiagnosticsEnabledChange = onDiagnosticsEnabledChange,
-                onCaptureModeChange = onCaptureModeChange,
                 onUseCapturedKey = onUseCapturedKey,
                 onCopyDiagnostics = onCopyDiagnostics,
                 onClearDiagnostics = onClearDiagnostics,
-            )
-
-            // 3. Detected Voice Assistants List
-            InstalledAssistantsCard(
                 onSelectAsTargetApp = { pkgName ->
                     onSelectBlueLMAction(TargetAction.SPECIFIC_APP, pkgName)
-                }
+                },
             )
-
-            // 4. Service Statistics Card
-            StatisticsCard(state = state)
-
-            // 5. Onboarding & Usage Instructions Section
-            OnboardingSection()
 
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        // App Picker Dialogs
         if (showAppPickerForBlueLM) {
             AppPickerDialog(
                 onDismiss = { showAppPickerForBlueLM = false },
@@ -213,6 +223,79 @@ fun MainScreen(
                 }
             )
         }
+    }
+}
+
+@Composable
+fun SetupChecklistCard(
+    a11yEnabled: Boolean,
+    actionConfigured: Boolean,
+    testDone: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    ElevatedCard(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+        ),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.setup_checklist_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            ChecklistRow(
+                done = a11yEnabled,
+                label = stringResource(R.string.setup_step_enable_a11y),
+            )
+            ChecklistRow(
+                done = actionConfigured,
+                label = stringResource(R.string.setup_step_pick_action),
+            )
+            ChecklistRow(
+                done = testDone,
+                label = stringResource(R.string.setup_step_test),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ChecklistRow(
+    done: Boolean,
+    label: String,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(
+            imageVector = if (done) AppIcons.CheckCircle else AppIcons.Warning,
+            contentDescription = null,
+            tint = if (done) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            modifier = Modifier.size(22.dp),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = if (done) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (done) {
+                MaterialTheme.colorScheme.onSurface
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        )
     }
 }
 
@@ -299,14 +382,22 @@ fun StatusBannerCard(
                 }
 
                 Surface(
-                    color = if (isActive) Color(0xFF2E7D32) else Color(0xFFC62828),
+                    color = if (isActive) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
                     shape = RoundedCornerShape(12.dp),
                 ) {
                     Text(
                         text = stringResource(
                             if (isActive) R.string.badge_active else R.string.badge_disabled,
                         ),
-                        color = Color.White,
+                        color = if (isActive) {
+                            MaterialTheme.colorScheme.onPrimary
+                        } else {
+                            MaterialTheme.colorScheme.onError
+                        },
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
@@ -347,16 +438,12 @@ fun StatusBannerCard(
 }
 
 @Composable
-fun TargetActionConfigCard(
+fun BlueLMActionCard(
     state: InterceptorServiceState,
     onSelectBlueLMAction: (TargetAction, String?) -> Unit,
     onOpenAppPickerForBlueLM: () -> Unit,
-    onSelectCameraAction: (TargetAction, String?) -> Unit,
-    onOpenAppPickerForCamera: () -> Unit,
-    onSkipCameraAppChange: (Boolean) -> Unit,
-    onCaptureModeChange: (Boolean) -> Unit,
-    onRemoveCapturedKey: (Int) -> Unit,
     onTestSelectedAction: () -> Unit,
+    testEnabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
     ElevatedCard(
@@ -387,13 +474,21 @@ fun TargetActionConfigCard(
                 )
             }
 
-            // BlueLM Power Button Interception Action
             Text(
                 text = stringResource(R.string.bluelm_trigger_action),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Bold,
             )
+
+            if (!testEnabled) {
+                Text(
+                    text = stringResource(R.string.pick_action_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
 
             ActionSelectorList(
                 selectedAction = state.blueLMAction,
@@ -409,9 +504,115 @@ fun TargetActionConfigCard(
                 specificPackage = state.blueLMSpecificPackage,
             )
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Button(
+                onClick = onTestSelectedAction,
+                enabled = testEnabled,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(
+                    imageVector = AppIcons.Launch,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.test_selected_action),
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+    }
+}
 
-            // Camera Key Interception Action
+@Composable
+fun AdvancedSection(
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    state: InterceptorServiceState,
+    diagEvents: List<DiagEvent>,
+    onSelectCameraAction: (TargetAction, String?) -> Unit,
+    onOpenAppPickerForCamera: () -> Unit,
+    onSkipCameraAppChange: (Boolean) -> Unit,
+    onCaptureModeChange: (Boolean) -> Unit,
+    onRemoveCapturedKey: (Int) -> Unit,
+    onDiagnosticsEnabledChange: (Boolean) -> Unit,
+    onUseCapturedKey: (Int) -> Unit,
+    onCopyDiagnostics: () -> Unit,
+    onClearDiagnostics: () -> Unit,
+    onSelectAsTargetApp: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        OutlinedButton(
+            onClick = onToggle,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                text = stringResource(
+                    if (expanded) R.string.advanced_hide else R.string.advanced_show,
+                ),
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+
+        if (expanded) {
+            Text(
+                text = stringResource(R.string.advanced_settings),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            CameraActionCard(
+                state = state,
+                onSelectCameraAction = onSelectCameraAction,
+                onOpenAppPickerForCamera = onOpenAppPickerForCamera,
+                onSkipCameraAppChange = onSkipCameraAppChange,
+                onCaptureModeChange = onCaptureModeChange,
+                onRemoveCapturedKey = onRemoveCapturedKey,
+            )
+            DiagnosticsCard(
+                state = state,
+                events = diagEvents,
+                onDiagnosticsEnabledChange = onDiagnosticsEnabledChange,
+                onCaptureModeChange = onCaptureModeChange,
+                onUseCapturedKey = onUseCapturedKey,
+                onCopyDiagnostics = onCopyDiagnostics,
+                onClearDiagnostics = onClearDiagnostics,
+            )
+            InstalledAssistantsCard(onSelectAsTargetApp = onSelectAsTargetApp)
+            StatisticsCard(state = state)
+            OnboardingSection()
+        }
+    }
+}
+
+@Composable
+fun CameraActionCard(
+    state: InterceptorServiceState,
+    onSelectCameraAction: (TargetAction, String?) -> Unit,
+    onOpenAppPickerForCamera: () -> Unit,
+    onSkipCameraAppChange: (Boolean) -> Unit,
+    onCaptureModeChange: (Boolean) -> Unit,
+    onRemoveCapturedKey: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    ElevatedCard(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+        ),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
             Text(
                 text = stringResource(R.string.camera_trigger_action),
                 style = MaterialTheme.typography.labelLarge,
@@ -492,32 +693,15 @@ fun TargetActionConfigCard(
                     color = MaterialTheme.colorScheme.primary,
                 )
             }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Button(
-                onClick = onTestSelectedAction,
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(
-                    imageVector = AppIcons.Launch,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = stringResource(R.string.test_selected_action),
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
         }
     }
 }
 
+
+
 @Composable
 fun ActionSelectorList(
-    selectedAction: TargetAction,
+    selectedAction: TargetAction?,
     selectedSpecificPkg: String?,
     onSelectAction: (TargetAction) -> Unit,
     onOpenAppPicker: () -> Unit,
@@ -525,7 +709,7 @@ fun ActionSelectorList(
     val context = LocalContext.current
     // Name the app "Default Assistant" actually resolves to. Without this the option reads as
     // "the assistant I chose" when it really means "whatever the OS is set to" — which is how a
-    // stored Gemini pick can sit next to a launch that opens Google.
+    // stored Specific App pick can sit next to a launch that opens the system default.
     val systemDefaultLabel = remember {
         ActionExecutionEngine.resolveSystemDefaultAssistant(context).first
             ?.let { pkg -> appLabelFor(context, pkg) }
@@ -598,7 +782,10 @@ fun ActionSelectorList(
                         ) {
                             Text(
                                 text = if (!selectedSpecificPkg.isNullOrEmpty()) {
-                                    stringResource(R.string.app_selected, selectedSpecificPkg)
+                                    stringResource(
+                                        R.string.app_selected,
+                                        appLabelFor(context, selectedSpecificPkg),
+                                    )
                                 } else {
                                     stringResource(R.string.no_app_selected)
                                 },
@@ -637,14 +824,14 @@ fun ActionSelectorList(
 
                     if (action == TargetAction.DEFAULT_ASSISTANT && isSelected) {
                         val loopPkg = remember {
-                            ActionExecutionEngine.resolveSystemDefaultAssistant(context).first
-                        }
-                        if (loopPkg != null &&
-                            InterceptedAssistant.wouldLoopToInterceptedAssistant(
-                                loopPkg,
-                                context.packageName,
+                            RemapConfig.defaultAssistantLoopPackage(
+                                action = TargetAction.DEFAULT_ASSISTANT,
+                                systemDefaultPackage =
+                                    ActionExecutionEngine.resolveSystemDefaultAssistant(context).first,
+                                ownPackage = context.packageName,
                             )
-                        ) {
+                        }
+                        if (loopPkg != null) {
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text = stringResource(R.string.default_assistant_loop_warning, loopPkg),
@@ -707,12 +894,20 @@ fun InstalledAssistantsCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                installedAssistants.forEach { assistant ->
-                    AssistantStatusItem(
-                        assistant = assistant,
-                        onSelectAsTarget = { onSelectAsTargetApp(assistant.packageName) }
-                    )
+            if (installedAssistants.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.assistants_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    installedAssistants.forEach { assistant ->
+                        AssistantStatusItem(
+                            assistant = assistant,
+                            onSelectAsTarget = { onSelectAsTargetApp(assistant.packageName) }
+                        )
+                    }
                 }
             }
         }
@@ -776,29 +971,16 @@ fun AssistantStatusItem(
             }
 
             if (assistant.isInstalled) {
-                Surface(
-                    color = Color(0xFF2E7D32).copy(alpha = 0.15f),
+                OutlinedButton(
+                    onClick = onSelectAsTarget,
                     shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.clickable { onSelectAsTarget() },
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    ) {
-                        Icon(
-                            imageVector = AppIcons.Check,
-                            contentDescription = null,
-                            tint = Color(0xFF2E7D32),
-                            modifier = Modifier.size(14.dp),
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = stringResource(R.string.badge_installed),
-                            color = Color(0xFF2E7D32),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
+                    Text(
+                        text = stringResource(R.string.use_as_target),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                    )
                 }
             } else {
                 Surface(
@@ -1167,7 +1349,11 @@ fun StatisticsCard(
                     value = stringResource(
                         if (state.isRunning) R.string.running else R.string.stopped,
                     ),
-                    valueColor = if (state.isRunning) Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    valueColor = if (state.isRunning) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -1190,6 +1376,12 @@ fun StatisticsCard(
                     modifier = Modifier.weight(1f),
                 )
             }
+
+            Text(
+                text = stringResource(R.string.stats_ephemeral_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -1498,13 +1690,14 @@ fun HwctsGate(modifier: Modifier = Modifier) {
             )
         }
     }
+    val gate = RemapConfig.hwctsGate(installed = installed, accessibilityEnabled = accessibilityOn)
 
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        when {
-            !installed -> {
+        when (gate) {
+            RemapConfig.HwctsGate.NOT_INSTALLED -> {
                 Text(
                     text = stringResource(R.string.hwcts_not_installed),
                     style = MaterialTheme.typography.bodySmall,
@@ -1517,7 +1710,7 @@ fun HwctsGate(modifier: Modifier = Modifier) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            !accessibilityOn -> {
+            RemapConfig.HwctsGate.ACCESSIBILITY_OFF -> {
                 Text(
                     text = stringResource(R.string.hwcts_a11y_off),
                     style = MaterialTheme.typography.bodySmall,
@@ -1530,7 +1723,7 @@ fun HwctsGate(modifier: Modifier = Modifier) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            else -> {
+            RemapConfig.HwctsGate.READY -> {
                 Text(
                     text = stringResource(R.string.hwcts_ready),
                     style = MaterialTheme.typography.bodySmall,
@@ -1569,64 +1762,93 @@ fun CircleToSearchGate(modifier: Modifier = Modifier) {
     val readiness by produceState<CircleToSearch.Readiness?>(initialValue = null, probeTick) {
         value = withContext(Dispatchers.IO) { CircleToSearch.probe(context) }
     }
+    val settingsIntent = remember(readiness) {
+        CircleToSearch.assistantSettingsIntent(context.packageManager)
+    }
+    val gate = RemapConfig.ctsGate(
+        readiness = readiness?.let {
+            CtsReadiness(
+                usable = it.usable,
+                googleInstalled = it.googleInstalled,
+                googleIsAssistant = it.googleIsAssistant,
+                contextualSearchKey = it.contextualSearchKey,
+                blockerText = it.localizedBlocker(context),
+            )
+        },
+        hasAssistantSettingsIntent = settingsIntent != null,
+    )
 
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        val current = readiness
-        if (current == null) {
-            Text(
-                text = stringResource(R.string.cts_checking),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        } else {
-            Text(
-                text = when {
-                    current.usable && current.googleIsAssistant ->
-                        stringResource(R.string.cts_ready_google)
-                    current.usable ->
-                        stringResource(R.string.cts_ready_contextual)
-                    else -> current.localizedBlocker(context)
-                        ?: stringResource(R.string.cts_not_ready)
-                },
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.Medium,
-                color = if (current.usable) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.error
-                },
-            )
-            if (!current.googleInstalled) {
+        when (val current = gate) {
+            RemapConfig.CtsGate.Checking -> {
                 Text(
-                    text = stringResource(R.string.cts_install_google),
+                    text = stringResource(R.string.cts_checking),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            } else if (!current.googleIsAssistant && current.contextualSearchKey.isNullOrEmpty()) {
-                val settingsIntent = CircleToSearch.assistantSettingsIntent(context.packageManager)
-                if (settingsIntent != null) {
+            }
+            RemapConfig.CtsGate.ReadyGoogle -> {
+                Text(
+                    text = stringResource(R.string.cts_ready_google),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    text = stringResource(R.string.cts_battery_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            RemapConfig.CtsGate.ReadyContextual -> {
+                Text(
+                    text = stringResource(R.string.cts_ready_contextual),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    text = stringResource(R.string.cts_battery_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            is RemapConfig.CtsGate.Blocked -> {
+                Text(
+                    text = current.blockerText ?: stringResource(R.string.cts_not_ready),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                if (!current.googleInstalled) {
+                    Text(
+                        text = stringResource(R.string.cts_install_google),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else if (current.showOpenAssistantSettings) {
                     OutlinedButton(
                         onClick = { startCircleToSearchIntent(context, settingsIntent) },
                         shape = RoundedCornerShape(8.dp),
                     ) {
                         Text(stringResource(R.string.cts_open_assistant_settings), fontSize = 12.sp)
                     }
-                } else {
+                } else if (current.showAssistantSettingsPath) {
                     Text(
                         text = stringResource(R.string.cts_assistant_settings_path),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                Text(
+                    text = stringResource(R.string.cts_battery_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-            Text(
-                text = stringResource(R.string.cts_battery_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }
@@ -1645,18 +1867,16 @@ fun startCircleToSearchIntent(context: android.content.Context, intent: Intent?)
 }
 
 /**
- * States the concrete outcome of the current selection. `DEFAULT_ASSISTANT` ignores any stored
- * specific package, so a Gemini pick can sit in preferences while Google is what actually opens —
- * this line makes that visible instead of surprising.
+ * States the concrete outcome of the current selection via [RemapConfig.firePreview].
  */
 @Composable
-fun WillLaunchSummary(action: TargetAction, specificPackage: String?) {
+fun WillLaunchSummary(action: TargetAction?, specificPackage: String?) {
     val context = LocalContext.current
-    val pkg = remember(action) {
+    val systemDefault = remember(action) {
         if (action == TargetAction.DEFAULT_ASSISTANT) {
-            ActionExecutionEngine.resolveSystemDefaultAssistant(context).first
+            ActionExecutionEngine.resolveSystemDefaultAssistant(context)
         } else {
-            null
+            null to ""
         }
     }
     val hwctsInstalled = remember(action) {
@@ -1666,33 +1886,53 @@ fun WillLaunchSummary(action: TargetAction, specificPackage: String?) {
             true
         }
     }
-    val summary = when (action) {
-        TargetAction.NONE -> stringResource(R.string.will_launch_none)
-        TargetAction.ASSISTANT_CHOOSER -> stringResource(R.string.will_launch_chooser)
-        TargetAction.DEFAULT_ASSISTANT -> when {
-            pkg == null ->
-                stringResource(R.string.will_launch_default_unset)
-            InterceptedAssistant.wouldLoopToInterceptedAssistant(pkg, context.packageName) ->
-                stringResource(R.string.will_launch_default_blocked, pkg)
-            else ->
-                stringResource(
-                    R.string.will_launch_default_app,
-                    appLabelFor(context, pkg),
-                )
-        }
-        TargetAction.CIRCLE_TO_SEARCH -> stringResource(R.string.will_launch_cts)
-        TargetAction.HWCTS -> stringResource(
-            if (!hwctsInstalled) R.string.will_launch_hwcts_missing else R.string.will_launch_hwcts,
+    val preview = RemapConfig.firePreview(
+        action = action,
+        specificPackage = specificPackage,
+        systemDefaultPackage = systemDefault.first,
+        ownPackage = context.packageName,
+        hwctsInstalled = hwctsInstalled,
+        appLabel = { pkg -> appLabelFor(context, pkg) },
+    )
+    val summary = when (preview) {
+        RemapConfig.FirePreview.Unset -> null
+        RemapConfig.FirePreview.PassThrough -> stringResource(R.string.will_launch_none)
+        RemapConfig.FirePreview.Chooser -> stringResource(R.string.will_launch_chooser)
+        RemapConfig.FirePreview.DefaultUnset -> stringResource(R.string.will_launch_default_unset)
+        is RemapConfig.FirePreview.DefaultBlocked ->
+            stringResource(R.string.will_launch_default_blocked, preview.packageName)
+        is RemapConfig.FirePreview.DefaultApp ->
+            stringResource(R.string.will_launch_default_app, preview.label)
+        RemapConfig.FirePreview.CircleToSearch -> stringResource(R.string.will_launch_cts)
+        is RemapConfig.FirePreview.Hwcts -> stringResource(
+            if (!preview.installed) R.string.will_launch_hwcts_missing else R.string.will_launch_hwcts,
         )
-        TargetAction.SPECIFIC_APP ->
-            if (specificPackage.isNullOrEmpty()) {
-                stringResource(R.string.will_launch_specific_unset)
-            } else {
-                appLabelFor(context, specificPackage)
-            }
-        TargetAction.FLASHLIGHT -> stringResource(R.string.will_launch_flashlight)
-        TargetAction.SCREENSHOT -> stringResource(R.string.will_launch_screenshot)
-        TargetAction.MUTE_TOGGLE -> stringResource(R.string.will_launch_mute)
+        RemapConfig.FirePreview.SpecificUnset -> stringResource(R.string.will_launch_specific_unset)
+        is RemapConfig.FirePreview.SpecificApp -> preview.label
+        RemapConfig.FirePreview.Flashlight -> stringResource(R.string.will_launch_flashlight)
+        RemapConfig.FirePreview.Screenshot -> stringResource(R.string.will_launch_screenshot)
+        RemapConfig.FirePreview.Mute -> stringResource(R.string.will_launch_mute)
+    }
+
+    if (summary == null) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    RoundedCornerShape(10.dp),
+                )
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.will_launch_unset),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.secondary,
+            )
+        }
+        return
     }
 
     Column(

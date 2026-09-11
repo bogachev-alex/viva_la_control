@@ -12,7 +12,6 @@ data class VendorProfile(
     val label: String,
     val maxDismissBacks: Int,
     val dismissTimeoutMs: Long,
-    val defaultDismissDelayMs: Int,
     /** How often the dismiss loop re-checks the top window after a BACK. */
     val pollMs: Long,
     /** Minimum gap between GLOBAL_ACTION_BACK presses while dismissing. */
@@ -28,7 +27,6 @@ data class VendorProfile(
             label = "OriginOS / Funtouch",
             maxDismissBacks = 3,
             dismissTimeoutMs = 400L,
-            defaultDismissDelayMs = 100,
             pollMs = 30L,
             hammerMinIntervalMs = 40L,
             focusWaitTimeoutMs = 250L,
@@ -45,7 +43,6 @@ data class VendorProfile(
             label = "EMUI / HarmonyOS",
             maxDismissBacks = 1,
             dismissTimeoutMs = 400L,
-            defaultDismissDelayMs = 100,
             pollMs = 120L,
             hammerMinIntervalMs = 120L,
             focusWaitTimeoutMs = 250L,
@@ -57,7 +54,6 @@ data class VendorProfile(
             label = "unknown",
             maxDismissBacks = 3,
             dismissTimeoutMs = 400L,
-            defaultDismissDelayMs = 100,
             pollMs = 30L,
             hammerMinIntervalMs = 40L,
             focusWaitTimeoutMs = 250L,
