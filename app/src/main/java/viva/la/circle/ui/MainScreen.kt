@@ -74,6 +74,7 @@ import viva.la.circle.engine.CircleToSearch
 import viva.la.circle.engine.HuaweiPowerManagement
 import viva.la.circle.model.BlueLMActionConfig
 import viva.la.circle.model.TargetAction
+import viva.la.circle.model.VolumeShortAction
 import viva.la.circle.remap.CtsReadiness
 import viva.la.circle.remap.RemapConfig
 import viva.la.circle.service.DiagEvent
@@ -97,6 +98,12 @@ fun MainScreen(
     onSelectBlueLMAction: (TargetAction, String?) -> Unit = { _, _ -> },
     onSelectCameraAction: (TargetAction, String?) -> Unit = { _, _ -> },
     onSkipCameraAppChange: (Boolean) -> Unit = {},
+    onVolumeSkipTracksChange: (Boolean) -> Unit = {},
+    onVolumeShortRemapChange: (Boolean) -> Unit = {},
+    onVolumeLongPressMsChange: (Long) -> Unit = {},
+    onVolumeHapticChange: (Boolean) -> Unit = {},
+    onVolumeUpShortChange: (VolumeShortAction) -> Unit = {},
+    onVolumeDownShortChange: (VolumeShortAction) -> Unit = {},
     onDiagnosticsEnabledChange: (Boolean) -> Unit = {},
     onCaptureModeChange: (Boolean) -> Unit = {},
     onUseCapturedKey: (Int) -> Unit = {},
@@ -109,6 +116,8 @@ fun MainScreen(
     val scrollState = rememberScrollState()
     var showAppPickerForBlueLM by remember { mutableStateOf(false) }
     var showAppPickerForCamera by remember { mutableStateOf(false) }
+    var showAppPickerForVolumeUp by remember { mutableStateOf(false) }
+    var showAppPickerForVolumeDown by remember { mutableStateOf(false) }
     var advancedExpanded by remember { mutableStateOf(false) }
     var testAttempted by remember { mutableStateOf(false) }
     val blueLMConfigured = BlueLMActionConfig.isConfigured(state.blueLMAction)
@@ -183,6 +192,18 @@ fun MainScreen(
                 testEnabled = blueLMConfigured,
             )
 
+            VolumeKeysCard(
+                state = state,
+                onSkipTracksChange = onVolumeSkipTracksChange,
+                onShortRemapChange = onVolumeShortRemapChange,
+                onLongPressMsChange = onVolumeLongPressMsChange,
+                onHapticChange = onVolumeHapticChange,
+                onVolumeUpShortChange = onVolumeUpShortChange,
+                onVolumeDownShortChange = onVolumeDownShortChange,
+                onOpenAppPickerForVolumeUp = { showAppPickerForVolumeUp = true },
+                onOpenAppPickerForVolumeDown = { showAppPickerForVolumeDown = true },
+            )
+
             AdvancedSection(
                 expanded = advancedExpanded,
                 onToggle = { advancedExpanded = !advancedExpanded },
@@ -222,6 +243,30 @@ fun MainScreen(
                     onSelectCameraAction(TargetAction.SPECIFIC_APP, app.packageName)
                     showAppPickerForCamera = false
                 }
+            )
+        }
+
+        if (showAppPickerForVolumeUp) {
+            AppPickerDialog(
+                onDismiss = { showAppPickerForVolumeUp = false },
+                onSelectApp = { app ->
+                    onVolumeUpShortChange(
+                        VolumeShortAction.Remap(TargetAction.SPECIFIC_APP, app.packageName),
+                    )
+                    showAppPickerForVolumeUp = false
+                },
+            )
+        }
+
+        if (showAppPickerForVolumeDown) {
+            AppPickerDialog(
+                onDismiss = { showAppPickerForVolumeDown = false },
+                onSelectApp = { app ->
+                    onVolumeDownShortChange(
+                        VolumeShortAction.Remap(TargetAction.SPECIFIC_APP, app.packageName),
+                    )
+                    showAppPickerForVolumeDown = false
+                },
             )
         }
     }

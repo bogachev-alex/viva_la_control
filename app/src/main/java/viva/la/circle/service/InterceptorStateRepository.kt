@@ -6,6 +6,7 @@ import android.provider.Settings
 import android.text.TextUtils
 import viva.la.circle.engine.OriginOs
 import viva.la.circle.engine.VendorProfile
+import viva.la.circle.gesture.GestureHandleConfig
 import viva.la.circle.model.BlueLMActionConfig
 import viva.la.circle.model.TargetAction
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,6 +39,14 @@ data class InterceptorServiceState(
     val detectedOsLabel: String = "",
     val detectedVendorId: String = "",
     val huaweiAppLaunchAcknowledged: Boolean = false,
+    val gestureHandleEnabled: Boolean = false,
+    val gestureHandleOpacity: Int = GestureHandleConfig.DEFAULT_OPACITY_PERCENT,
+    val gestureTapAction: TargetAction = GestureHandleConfig.DEFAULT_TAP_ACTION,
+    val gestureTapSpecificPackage: String? = null,
+    val gestureLongPressAction: TargetAction = GestureHandleConfig.DEFAULT_LONG_PRESS_ACTION,
+    val gestureLongPressSpecificPackage: String? = null,
+    val gestureSwipeUpAction: TargetAction = GestureHandleConfig.DEFAULT_SWIPE_UP_ACTION,
+    val gestureSwipeUpSpecificPackage: String? = null,
 )
 
 enum class KeyCaptureTarget { CAMERA }
@@ -51,6 +60,14 @@ object InterceptorStateRepository {
     private const val KEY_SKIP_CAMERA_APP = "key_skip_camera_app"
     private const val KEY_CAMERA_KEY_CODES = "key_camera_key_codes"
     private const val KEY_HUAWEI_APP_LAUNCH_ACKED = "key_huawei_app_launch_acked"
+    private const val KEY_GESTURE_HANDLE_ENABLED = "key_gesture_handle_enabled"
+    private const val KEY_GESTURE_HANDLE_OPACITY = "key_gesture_handle_opacity"
+    private const val KEY_GESTURE_TAP_ACTION = "key_gesture_tap_action"
+    private const val KEY_GESTURE_TAP_PKG = "key_gesture_tap_pkg"
+    private const val KEY_GESTURE_LONG_PRESS_ACTION = "key_gesture_long_press_action"
+    private const val KEY_GESTURE_LONG_PRESS_PKG = "key_gesture_long_press_pkg"
+    private const val KEY_GESTURE_SWIPE_UP_ACTION = "key_gesture_swipe_up_action"
+    private const val KEY_GESTURE_SWIPE_UP_PKG = "key_gesture_swipe_up_pkg"
     private const val STALE_TEST_PACKAGE = "com.tosharoki.hwcts"
     private const val DIAG_CAP = 200
 
@@ -111,10 +128,126 @@ object InterceptorStateRepository {
                     detectedOsLabel = osLabel,
                     detectedVendorId = profile.id,
                     huaweiAppLaunchAcknowledged = prefs.getBoolean(KEY_HUAWEI_APP_LAUNCH_ACKED, false),
+                    gestureHandleEnabled = prefs.getBoolean(KEY_GESTURE_HANDLE_ENABLED, false),
+                    gestureHandleOpacity = GestureHandleConfig.clampOpacity(
+                        prefs.getInt(
+                            KEY_GESTURE_HANDLE_OPACITY,
+                            GestureHandleConfig.DEFAULT_OPACITY_PERCENT,
+                        ),
+                    ),
+                    gestureTapAction = TargetAction.fromName(
+                        prefs.getString(KEY_GESTURE_TAP_ACTION, null),
+                        GestureHandleConfig.DEFAULT_TAP_ACTION,
+                    ),
+                    gestureTapSpecificPackage = sanitizeTestPackage(
+                        prefs.getString(KEY_GESTURE_TAP_PKG, null),
+                    ),
+                    gestureLongPressAction = TargetAction.fromName(
+                        prefs.getString(KEY_GESTURE_LONG_PRESS_ACTION, null),
+                        GestureHandleConfig.DEFAULT_LONG_PRESS_ACTION,
+                    ),
+                    gestureLongPressSpecificPackage = sanitizeTestPackage(
+                        prefs.getString(KEY_GESTURE_LONG_PRESS_PKG, null),
+                    ),
+                    gestureSwipeUpAction = TargetAction.fromName(
+                        prefs.getString(KEY_GESTURE_SWIPE_UP_ACTION, null),
+                        GestureHandleConfig.DEFAULT_SWIPE_UP_ACTION,
+                    ),
+                    gestureSwipeUpSpecificPackage = sanitizeTestPackage(
+                        prefs.getString(KEY_GESTURE_SWIPE_UP_PKG, null),
+                    ),
                 )
             }
         } catch (_: Exception) {
             // Context might not be available in test environments
+        }
+    }
+
+    fun setGestureHandleEnabled(context: Context? = null, enabled: Boolean) {
+        _serviceState.update { it.copy(gestureHandleEnabled = enabled) }
+        persistBoolean(context, KEY_GESTURE_HANDLE_ENABLED, enabled)
+    }
+
+    fun setGestureHandleOpacity(context: Context? = null, opacityPercent: Int) {
+        val clamped = GestureHandleConfig.clampOpacity(opacityPercent)
+        _serviceState.update { it.copy(gestureHandleOpacity = clamped) }
+        if (context != null) {
+            try {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .edit()
+                    .putInt(KEY_GESTURE_HANDLE_OPACITY, clamped)
+                    .apply()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    fun setGestureTapAction(
+        context: Context? = null,
+        action: TargetAction,
+        specificPackage: String? = null,
+    ) {
+        _serviceState.update {
+            it.copy(gestureTapAction = action, gestureTapSpecificPackage = specificPackage)
+        }
+        persistGestureSlot(context, KEY_GESTURE_TAP_ACTION, KEY_GESTURE_TAP_PKG, action, specificPackage)
+    }
+
+    fun setGestureLongPressAction(
+        context: Context? = null,
+        action: TargetAction,
+        specificPackage: String? = null,
+    ) {
+        _serviceState.update {
+            it.copy(
+                gestureLongPressAction = action,
+                gestureLongPressSpecificPackage = specificPackage,
+            )
+        }
+        persistGestureSlot(
+            context,
+            KEY_GESTURE_LONG_PRESS_ACTION,
+            KEY_GESTURE_LONG_PRESS_PKG,
+            action,
+            specificPackage,
+        )
+    }
+
+    fun setGestureSwipeUpAction(
+        context: Context? = null,
+        action: TargetAction,
+        specificPackage: String? = null,
+    ) {
+        _serviceState.update {
+            it.copy(
+                gestureSwipeUpAction = action,
+                gestureSwipeUpSpecificPackage = specificPackage,
+            )
+        }
+        persistGestureSlot(
+            context,
+            KEY_GESTURE_SWIPE_UP_ACTION,
+            KEY_GESTURE_SWIPE_UP_PKG,
+            action,
+            specificPackage,
+        )
+    }
+
+    private fun persistGestureSlot(
+        context: Context?,
+        actionKey: String,
+        pkgKey: String,
+        action: TargetAction,
+        specificPackage: String?,
+    ) {
+        if (context == null) return
+        try {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putString(actionKey, action.name)
+                .putString(pkgKey, specificPackage)
+                .apply()
+        } catch (_: Exception) {
         }
     }
 

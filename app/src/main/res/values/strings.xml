@@ -23,6 +23,22 @@
     <string name="action_screenshot_description">Takes a screenshot via accessibility</string>
     <string name="action_mute_title">Mute / Unmute</string>
     <string name="action_mute_description">Toggles media stream volume</string>
+    <string name="action_home_title">Home</string>
+    <string name="action_home_description">Go to the home screen</string>
+
+    <!-- Gesture Handle overlay -->
+    <string name="gesture_handle_title">Gesture Handle</string>
+    <string name="gesture_handle_enable">Enable Gesture Handle overlay</string>
+    <string name="gesture_handle_enable_hint">Draws our own bottom pill and takes over gesture nav (Home / Back / Recents). Hide the system gesture bar first in system settings.</string>
+    <string name="gesture_handle_hide_system_hint">Before enabling: turn off / hide the system gesture indicator in your phone\'s navigation settings so you do not get double navigation.</string>
+    <string name="gesture_handle_opacity">Opacity</string>
+    <string name="gesture_handle_opacity_value">%1$d%%</string>
+    <string name="gesture_handle_tap_action">Tap</string>
+    <string name="gesture_handle_long_press_action">Long-press</string>
+    <string name="gesture_handle_swipe_up_action">Swipe up</string>
+    <string name="gesture_handle_fixed_gestures">Fixed: edge swipe = Back, swipe up and hold = Recents</string>
+    <string name="gesture_handle_home_warning">Swipe up is not Home. Assign Home to another remappable gesture or you may be stuck without a home action.</string>
+    <string name="will_launch_home">Go to the home screen.</string>
 
     <!-- Status banner -->
     <string name="service_active">Service Active</string>
@@ -171,4 +187,26 @@
     <string name="toast_copied_report">Copied report + %1$d log lines</string>
     <string name="toast_a11y_settings_failed">Unable to open Accessibility Settings: %1$s</string>
     <string name="toast_google_app_not_found">Google app not found</string>
+
+    <!-- Volume keys -->
+    <string name="volume_keys_section">Volume keys</string>
+    <string name="volume_skip_tracks">Long-press volume: skip tracks</string>
+    <string name="volume_skip_tracks_hint">Hold Volume Up for next track, Volume Down for previous, while media is playing. Short taps still change volume. May not work with the screen off on some ROMs — check Diagnostics for VOL events.</string>
+    <string name="volume_short_remap">Short-press volume: remap</string>
+    <string name="volume_short_remap_hint">Assign a TargetAction to a short volume tap per key. Keys set to Volume stay system-like unless long-press skip needs them.</string>
+    <string name="volume_long_press_duration">Long-press duration</string>
+    <string name="volume_timeout_300">300 ms</string>
+    <string name="volume_timeout_500">500 ms</string>
+    <string name="volume_timeout_700">700 ms</string>
+    <string name="volume_haptic">Haptic feedback</string>
+    <string name="volume_haptic_hint">Vibrate briefly on track skip and on short-press Remap.</string>
+    <string name="volume_up_short">Volume Up short-press</string>
+    <string name="volume_down_short">Volume Down short-press</string>
+    <string name="volume_short_volume">Volume</string>
+    <string name="volume_short_volume_description">Adjust music volume (system volume UI)</string>
+    <string name="media_notification_listener_label">Media session access</string>
+    <string name="volume_nls_banner_title">Better track detection</string>
+    <string name="volume_nls_banner_body">Enable notification access so skip uses the active media player. Without it, a coarser music-active check is used.</string>
+    <string name="volume_nls_enable">Notification access</string>
+    <string name="volume_nls_enabled">Notification access on</string>
 </resources>

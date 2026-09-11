@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import viva.la.circle.engine.ActionExecutionEngine
 import viva.la.circle.engine.CircleToSearch
+import viva.la.circle.model.VolumeShortAction
 import viva.la.circle.remap.TargetActionFire
 import viva.la.circle.service.InterceptorStateRepository
 import viva.la.circle.ui.MainScreen
@@ -49,6 +50,24 @@ class MainActivity : ComponentActivity() {
                     },
                     onSkipCameraAppChange = { skip ->
                         InterceptorStateRepository.setSkipCameraApp(this, skip)
+                    },
+                    onVolumeSkipTracksChange = { enabled ->
+                        InterceptorStateRepository.setVolumeSkipTracksEnabled(this, enabled)
+                    },
+                    onVolumeShortRemapChange = { enabled ->
+                        InterceptorStateRepository.setVolumeShortRemapEnabled(this, enabled)
+                    },
+                    onVolumeLongPressMsChange = { ms ->
+                        InterceptorStateRepository.setVolumeLongPressMs(this, ms)
+                    },
+                    onVolumeHapticChange = { enabled ->
+                        InterceptorStateRepository.setVolumeHapticEnabled(this, enabled)
+                    },
+                    onVolumeUpShortChange = { action ->
+                        InterceptorStateRepository.setVolumeUpShortAction(this, action)
+                    },
+                    onVolumeDownShortChange = { action ->
+                        InterceptorStateRepository.setVolumeDownShortAction(this, action)
                     },
                     onDiagnosticsEnabledChange = { enabled ->
                         InterceptorStateRepository.setDiagnosticsEnabled(enabled)
@@ -103,6 +122,19 @@ class MainActivity : ComponentActivity() {
             appendLine("blueLM=${state.blueLMAction} ${state.blueLMSpecificPackage ?: ""}")
             appendLine("camera=${state.cameraAction} ${state.cameraSpecificPackage ?: ""}")
             appendLine("cameraKeys=${state.cameraKeyCodes.sorted()} skipCameraApp=${state.skipCameraApp}")
+            appendLine(
+                "volumeSkip=${state.volumeSkipTracksEnabled} " +
+                    "volumeShort=${state.volumeShortRemapEnabled} " +
+                    "timeout=${state.volumeLongPressMs} haptic=${state.volumeHapticEnabled}",
+            )
+            appendLine(
+                "volumeUpShort=${VolumeShortAction.toStoredName(state.volumeUpShortAction)} " +
+                    "${VolumeShortAction.toStoredPackage(state.volumeUpShortAction) ?: ""}",
+            )
+            appendLine(
+                "volumeDownShort=${VolumeShortAction.toStoredName(state.volumeDownShortAction)} " +
+                    "${VolumeShortAction.toStoredPackage(state.volumeDownShortAction) ?: ""}",
+            )
             ActionExecutionEngine.assistantResolutionReport(this@MainActivity).forEach { (k, v) ->
                 appendLine("$k = $v")
             }

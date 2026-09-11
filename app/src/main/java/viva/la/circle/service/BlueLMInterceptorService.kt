@@ -12,10 +12,14 @@ import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
+import android.media.AudioManager
 import viva.la.circle.engine.ActionExecutionEngine
 import viva.la.circle.engine.VendorProfile
+import viva.la.circle.media.MediaPlaybackGate
+import viva.la.circle.media.VolumeHaptics
 import viva.la.circle.model.BlueLMActionConfig
 import viva.la.circle.model.TargetAction
+import viva.la.circle.model.VolumeShortAction
 import viva.la.circle.remap.TargetActionFire
 import viva.la.circle.remap.DeviceRemapProfile
 import viva.la.circle.remap.EngineFireTargetAction
@@ -26,6 +30,7 @@ import viva.la.circle.remap.RemapClock
 import viva.la.circle.remap.RemapDiag
 import viva.la.circle.remap.RemapSession
 import viva.la.circle.remap.RemapWindows
+import viva.la.circle.remap.VolumeKeyPolicy
 import viva.la.circle.remap.WindowSnap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -58,6 +63,22 @@ class BlueLMInterceptorService : AccessibilityService() {
     private var sawPowerKeyThisSession = false
     private var loggedMissingPowerKey = false
 
+    private val volumeUpGesture = VolumeGestureState()
+    private val volumeDownGesture = VolumeGestureState()
+
+    private class VolumeGestureState {
+        var consuming: Boolean = false
+        var skipFired: Boolean = false
+        var pendingSkipJob: Job? = null
+
+        fun reset() {
+            pendingSkipJob?.cancel()
+            pendingSkipJob = null
+            consuming = false
+            skipFired = false
+        }
+    }
+
     @Volatile
     private var foregroundPackage: String? = null
 
@@ -88,6 +109,8 @@ class BlueLMInterceptorService : AccessibilityService() {
                 pendingBlueLMLaunchJob?.cancel()
                 pendingBlueLMLaunchJob = null
                 blueLMActionLaunched = false
+                volumeUpGesture.reset()
+                volumeDownGesture.reset()
                 InterceptorStateRepository.diag("FG", "screen-off, cleared foreground")
             }
         }
@@ -317,6 +340,10 @@ class BlueLMInterceptorService : AccessibilityService() {
 
         if (isPowerKey(event.keyCode)) {
             return handlePowerKey(event, state)
+        }
+
+        if (isVolumeKey(event.keyCode)) {
+            return handleVolumeKey(event, state)
         }
 
         if (!isCameraShutterKey(event.keyCode, state.cameraKeyCodes)) {
@@ -556,6 +583,161 @@ class BlueLMInterceptorService : AccessibilityService() {
             "fired $action power-long held=${heldMs}ms result=$fired",
         )
     }
+
+
+    private fun handleVolumeKey(event: KeyEvent, state: InterceptorServiceState): Boolean {
+        val raise = event.keyCode == KeyEvent.KEYCODE_VOLUME_UP
+        val gesture = if (raise) volumeUpGesture else volumeDownGesture
+        val configuredShort = if (raise) state.volumeUpShortAction else state.volumeDownShortAction
+        val effectiveShort = if (state.volumeShortRemapEnabled) {
+            configuredShort
+        } else {
+            VolumeShortAction.Volume
+        }
+
+        val audioManager = getSystemService(AudioManager::class.java)
+        val inCall = audioManager != null && MediaPlaybackGate.isInCall(audioManager)
+        val mediaPlaying = MediaPlaybackGate.isMediaPlaying(this)
+        val canSkip = VolumeKeyPolicy.canSkipOnLongPress(
+            skipTracksEnabled = state.volumeSkipTracksEnabled,
+            mediaPlaying = mediaPlaying,
+            inCall = inCall,
+        )
+        val armed = VolumeKeyPolicy.shouldArmKey(
+            skipTracksEnabled = state.volumeSkipTracksEnabled,
+            shortRemapEnabled = state.volumeShortRemapEnabled,
+            shortAction = effectiveShort,
+            mediaPlaying = mediaPlaying,
+            inCall = inCall,
+        )
+
+        when (event.action) {
+            KeyEvent.ACTION_DOWN -> {
+                val decision = VolumeKeyPolicy.onDown(
+                    armed = armed,
+                    canSkip = canSkip,
+                    repeatCount = event.repeatCount,
+                    alreadyConsuming = gesture.consuming,
+                )
+                return applyVolumeDown(decision, gesture, state, raise)
+            }
+            KeyEvent.ACTION_UP -> {
+                val wasConsuming = gesture.consuming
+                val skipFired = gesture.skipFired
+                gesture.pendingSkipJob?.cancel()
+                gesture.pendingSkipJob = null
+                gesture.consuming = false
+                gesture.skipFired = false
+                val decision = VolumeKeyPolicy.onUp(
+                    wasConsuming = wasConsuming,
+                    skipFired = skipFired,
+                    shortAction = effectiveShort,
+                )
+                return applyVolumeUp(decision, state, raise)
+            }
+            else -> return false
+        }
+    }
+
+    private fun applyVolumeDown(
+        decision: VolumeKeyPolicy.DownDecision,
+        gesture: VolumeGestureState,
+        state: InterceptorServiceState,
+        raise: Boolean,
+    ): Boolean {
+        when (decision) {
+            VolumeKeyPolicy.DownDecision.PassThrough -> return false
+            VolumeKeyPolicy.DownDecision.ContinueConsuming -> return gesture.consuming
+            VolumeKeyPolicy.DownDecision.ConsumeShortOnly -> {
+                gesture.consuming = true
+                gesture.skipFired = false
+                gesture.pendingSkipJob?.cancel()
+                gesture.pendingSkipJob = null
+                InterceptorStateRepository.diag(
+                    "VOL",
+                    "DOWN consume short-only ${if (raise) "UP" else "DOWN"}",
+                )
+                return true
+            }
+            VolumeKeyPolicy.DownDecision.ConsumeStartSkipJob -> {
+                gesture.consuming = true
+                gesture.skipFired = false
+                gesture.pendingSkipJob?.cancel()
+                val timeout = state.volumeLongPressMs
+                gesture.pendingSkipJob = serviceScope.launch {
+                    delay(timeout)
+                    if (!gesture.consuming || gesture.skipFired) return@launch
+                    gesture.skipFired = true
+                    fireVolumeSkip(raise = raise, haptic = state.volumeHapticEnabled)
+                }
+                InterceptorStateRepository.diag(
+                    "VOL",
+                    "DOWN consume skip-job ${if (raise) "UP" else "DOWN"} timeout=${timeout}ms",
+                )
+                return true
+            }
+        }
+    }
+
+    private fun applyVolumeUp(
+        decision: VolumeKeyPolicy.UpDecision,
+        state: InterceptorServiceState,
+        raise: Boolean,
+    ): Boolean {
+        when (decision) {
+            VolumeKeyPolicy.UpDecision.PassThrough -> return false
+            VolumeKeyPolicy.UpDecision.AfterSkip -> {
+                InterceptorStateRepository.diag("VOL", "UP after skip")
+                return true
+            }
+            VolumeKeyPolicy.UpDecision.AdjustVolume -> {
+                MediaPlaybackGate.adjustMusicVolume(this, raise = raise)
+                InterceptorStateRepository.diag(
+                    "VOL",
+                    "short volume ${if (raise) "raise" else "lower"}",
+                )
+                return true
+            }
+            is VolumeKeyPolicy.UpDecision.FireAction -> {
+                val fired = TargetActionFire.forService(
+                    context = this,
+                    service = this,
+                ).fire(decision.action, decision.specificPackage)
+                if (state.volumeHapticEnabled) {
+                    VolumeHaptics.tick(this)
+                }
+                InterceptorStateRepository.recordInterception(
+                    "VolumeShort_${if (raise) "UP" else "DOWN"}",
+                )
+                InterceptorStateRepository.diag(
+                    "VOL",
+                    "short action ${decision.action} result=$fired",
+                )
+                return true
+            }
+        }
+    }
+
+    private fun fireVolumeSkip(raise: Boolean, haptic: Boolean) {
+        val ok = if (raise) {
+            MediaPlaybackGate.skipNext(this)
+        } else {
+            MediaPlaybackGate.skipPrevious(this)
+        }
+        if (haptic) {
+            VolumeHaptics.tick(this)
+        }
+        InterceptorStateRepository.recordInterception(
+            if (raise) "VolumeSkip_NEXT" else "VolumeSkip_PREV",
+        )
+        InterceptorStateRepository.diag(
+            "VOL",
+            "skip ${if (raise) "NEXT" else "PREV"} ok=$ok",
+        )
+    }
+
+    private fun isVolumeKey(keyCode: Int): Boolean =
+        keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN
 
     private fun isScreenInteractive(): Boolean {
         val pm = getSystemService(PowerManager::class.java) ?: return true

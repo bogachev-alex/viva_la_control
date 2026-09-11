@@ -23,6 +23,22 @@
     <string name="action_screenshot_description">Снимок экрана через спецвозможности</string>
     <string name="action_mute_title">Без звука / со звуком</string>
     <string name="action_mute_description">Переключает громкость медиапотока</string>
+    <string name="action_home_title">Home</string>
+    <string name="action_home_description">На рабочий стол</string>
+
+    <!-- Gesture Handle overlay -->
+    <string name="gesture_handle_title">Gesture Handle</string>
+    <string name="gesture_handle_enable">Включить overlay Gesture Handle</string>
+    <string name="gesture_handle_enable_hint">Рисует свою нижнюю полоску и берёт жестовую навигацию (Home / Back / Recents). Сначала спрячьте системную полоску в настройках навигации.</string>
+    <string name="gesture_handle_hide_system_hint">Перед включением: выключите / спрячьте системный индикатор жестов в настройках навигации телефона, иначе будет двойная навигация.</string>
+    <string name="gesture_handle_opacity">Opacity</string>
+    <string name="gesture_handle_opacity_value">%1$d%%</string>
+    <string name="gesture_handle_tap_action">Тап</string>
+    <string name="gesture_handle_long_press_action">Долгое нажатие</string>
+    <string name="gesture_handle_swipe_up_action">Свайп вверх</string>
+    <string name="gesture_handle_fixed_gestures">Фиксировано: свайп с края = Back, свайп вверх с удержанием = Recents</string>
+    <string name="gesture_handle_home_warning">Свайп вверх — не Home. Назначьте Home на другой жест Remap, иначе можно остаться без выхода на рабочий стол.</string>
+    <string name="will_launch_home">Переход на рабочий стол.</string>
 
     <!-- Status banner -->
     <string name="service_active">Служба активна</string>
@@ -171,4 +187,26 @@
     <string name="toast_copied_report">Скопирован отчёт + %1$d строк журнала</string>
     <string name="toast_a11y_settings_failed">Не удалось открыть спецвозможности: %1$s</string>
     <string name="toast_google_app_not_found">Приложение Google не найдено</string>
+
+    <!-- Volume keys -->
+    <string name="volume_keys_section">Клавиши громкости</string>
+    <string name="volume_skip_tracks">Долгое нажатие: смена трека</string>
+    <string name="volume_skip_tracks_hint">Удерживайте Volume Up — следующий трек, Volume Down — предыдущий, пока играет медиа. Короткое нажатие по-прежнему меняет громкость. На части прошивок с выключенным экраном может не работать — смотрите VOL в диагностике.</string>
+    <string name="volume_short_remap">Короткое нажатие: Remap</string>
+    <string name="volume_short_remap_hint">Назначьте TargetAction на короткий тап по каждой клавише. Клавиши с режимом Volume остаются как системные, пока long-press skip их не перехватывает.</string>
+    <string name="volume_long_press_duration">Длительность long-press</string>
+    <string name="volume_timeout_300">300 мс</string>
+    <string name="volume_timeout_500">500 мс</string>
+    <string name="volume_timeout_700">700 мс</string>
+    <string name="volume_haptic">Вибрация</string>
+    <string name="volume_haptic_hint">Короткая вибрация при смене трека и при Remap короткого нажатия.</string>
+    <string name="volume_up_short">Volume Up — короткое</string>
+    <string name="volume_down_short">Volume Down — короткое</string>
+    <string name="volume_short_volume">Громкость</string>
+    <string name="volume_short_volume_description">Менять громкость музыки (системный UI)</string>
+    <string name="media_notification_listener_label">Доступ к медиасессии</string>
+    <string name="volume_nls_banner_title">Точнее определять трек</string>
+    <string name="volume_nls_banner_body">Включите доступ к уведомлениям, чтобы skip шёл в активный плеер. Без этого используется грубая проверка «музыка играет».</string>
+    <string name="volume_nls_enable">Доступ к уведомлениям</string>
+    <string name="volume_nls_enabled">Доступ к уведомлениям включён</string>
 </resources>
