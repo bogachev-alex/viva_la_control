@@ -4,7 +4,10 @@ import viva.la.circle.model.VolumeShortAction
 
 /**
  * Volume-key Remap: long-press skip tracks + optional short-press TargetAction.
- * Arming is per-key (see [shouldArmKey]).
+ *
+ * When short-press is [VolumeShortAction.Volume], keys are **not** consumed: the OS keeps
+ * native volume (needed on OEMs where AudioManager synth fails). We only observe hold time
+ * and fire skip. When short-press is a Remap action, keys are consumed as usual.
  */
 object VolumeKeyPolicy {
 
@@ -14,16 +17,18 @@ object VolumeKeyPolicy {
     sealed class DownDecision {
         data object PassThrough : DownDecision()
         data object ContinueConsuming : DownDecision()
-        /** Consume DOWN and schedule long-press skip job. */
+        /** Pass key to OS (native volume) but schedule long-press skip. */
+        data object ObserveStartSkipJob : DownDecision()
+        /** Consume DOWN and schedule long-press skip (short Remap path). */
         data object ConsumeStartSkipJob : DownDecision()
-        /** Consume DOWN for short-press only (no skip). */
+        /** Consume DOWN for short-press Remap only (no skip). */
         data object ConsumeShortOnly : DownDecision()
     }
 
     sealed class UpDecision {
         data object PassThrough : UpDecision()
         data object AfterSkip : UpDecision()
-        data object AdjustVolume : UpDecision()
+        data object AfterObserve : UpDecision()
         data class FireAction(
             val action: viva.la.circle.model.TargetAction,
             val specificPackage: String?,
@@ -49,13 +54,25 @@ object VolumeKeyPolicy {
         inCall: Boolean,
     ): Boolean = !inCall && skipTracksEnabled && mediaPlaying
 
+    /**
+     * @param passThroughVolume true when short-press should stay native volume (Volume sentinel).
+     */
     fun onDown(
         armed: Boolean,
         canSkip: Boolean,
+        passThroughVolume: Boolean,
         repeatCount: Int,
         alreadyConsuming: Boolean,
+        alreadyObserving: Boolean,
     ): DownDecision {
         if (!armed) return DownDecision.PassThrough
+        if (passThroughVolume) {
+            // Native volume path — never consume. Only arm a skip timer on the first DOWN.
+            if (!canSkip) return DownDecision.PassThrough
+            if (repeatCount > 0) return DownDecision.PassThrough
+            if (alreadyObserving) return DownDecision.PassThrough
+            return DownDecision.ObserveStartSkipJob
+        }
         if (repeatCount > 0) {
             return if (alreadyConsuming) DownDecision.ContinueConsuming else DownDecision.PassThrough
         }
@@ -64,13 +81,15 @@ object VolumeKeyPolicy {
 
     fun onUp(
         wasConsuming: Boolean,
+        wasObserving: Boolean,
         skipFired: Boolean,
         shortAction: VolumeShortAction,
     ): UpDecision {
+        if (wasObserving) return UpDecision.AfterObserve
         if (!wasConsuming) return UpDecision.PassThrough
         if (skipFired) return UpDecision.AfterSkip
         return when (shortAction) {
-            is VolumeShortAction.Volume -> UpDecision.AdjustVolume
+            is VolumeShortAction.Volume -> UpDecision.PassThrough
             is VolumeShortAction.Remap -> UpDecision.FireAction(
                 action = shortAction.action,
                 specificPackage = shortAction.specificPackage,

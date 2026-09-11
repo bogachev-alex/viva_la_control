@@ -51,8 +51,7 @@ object MediaPlaybackGate {
         if (isNotificationListenerEnabled(context)) {
             val sessions = activeControllers(context)
             if (sessions.any { isPlaying(it) }) return true
-            // NLS on but nothing Playing — trust sessions over coarse isMusicActive.
-            return false
+            // NLS on but no Playing session (OEM / player quirks) — fall back to coarse signal.
         }
         @Suppress("DEPRECATION")
         return audioManager.isMusicActive
@@ -62,14 +61,49 @@ object MediaPlaybackGate {
 
     fun skipPrevious(context: Context): Boolean = dispatchSkip(context, next = false)
 
-    fun adjustMusicVolume(context: Context, raise: Boolean) {
+    fun adjustMusicVolume(context: Context, raise: Boolean): Boolean {
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val direction = if (raise) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
-        audioManager.adjustStreamVolume(
-            AudioManager.STREAM_MUSIC,
-            direction,
-            AudioManager.FLAG_SHOW_UI,
-        )
+        val flags = AudioManager.FLAG_SHOW_UI
+
+        // Prefer the playing session's volume (Apple Music / OEM players often ignore STREAM_MUSIC).
+        if (isNotificationListenerEnabled(context)) {
+            val controller = pickSkipController(context) ?: activeControllers(context).firstOrNull()
+            if (controller != null) {
+                try {
+                    controller.adjustVolume(direction, flags)
+                    return true
+                } catch (_: Exception) {
+                }
+            }
+        }
+
+        // Suggested stream follows whatever the system volume UI would target.
+        try {
+            @Suppress("DEPRECATION")
+            audioManager.adjustSuggestedStreamVolume(
+                direction,
+                AudioManager.USE_DEFAULT_STREAM_TYPE,
+                flags,
+            )
+            return true
+        } catch (_: Exception) {
+        }
+
+        return try {
+            val stream = AudioManager.STREAM_MUSIC
+            val cur = audioManager.getStreamVolume(stream)
+            val max = audioManager.getStreamMaxVolume(stream)
+            val next = (cur + if (raise) 1 else -1).coerceIn(0, max)
+            if (next == cur) {
+                audioManager.adjustStreamVolume(stream, direction, flags)
+            } else {
+                audioManager.setStreamVolume(stream, next, flags)
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun dispatchSkip(context: Context, next: Boolean): Boolean {

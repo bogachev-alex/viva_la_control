@@ -191,7 +191,7 @@
     <!-- Volume keys -->
     <string name="volume_keys_section">Клавиши громкости</string>
     <string name="volume_skip_tracks">Долгое нажатие: смена трека</string>
-    <string name="volume_skip_tracks_hint">Удерживайте Volume Up — следующий трек, Volume Down — предыдущий, пока играет медиа. Короткое нажатие по-прежнему меняет громкость. На части прошивок с выключенным экраном может не работать — смотрите VOL в диагностике.</string>
+    <string name="volume_skip_tracks_hint">Пока играет медиа, громкость остаётся системной. Удержание ~0,5 с — смена трека (Up = следующий, Down = предыдущий). Небольшой сдвиг громкости во время удержания нормален. С выключенным экраном на части прошивок может не работать — смотрите VOL в диагностике.</string>
     <string name="volume_short_remap">Короткое нажатие: Remap</string>
     <string name="volume_short_remap_hint">Назначьте TargetAction на короткий тап по каждой клавише. Клавиши с режимом Volume остаются как системные, пока long-press skip их не перехватывает.</string>
     <string name="volume_long_press_duration">Длительность long-press</string>

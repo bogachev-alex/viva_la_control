@@ -191,7 +191,7 @@
     <!-- Volume keys -->
     <string name="volume_keys_section">Volume keys</string>
     <string name="volume_skip_tracks">Long-press volume: skip tracks</string>
-    <string name="volume_skip_tracks_hint">Hold Volume Up for next track, Volume Down for previous, while media is playing. Short taps still change volume. May not work with the screen off on some ROMs — check Diagnostics for VOL events.</string>
+    <string name="volume_skip_tracks_hint">While media plays, volume stays native. Hold ~0.5s to skip (Up = next, Down = previous). A little volume change during the hold is normal. May not work with the screen off on some ROMs — check VOL in Diagnostics.</string>
     <string name="volume_short_remap">Short-press volume: remap</string>
     <string name="volume_short_remap_hint">Assign a TargetAction to a short volume tap per key. Keys set to Volume stay system-like unless long-press skip needs them.</string>
     <string name="volume_long_press_duration">Long-press duration</string>
