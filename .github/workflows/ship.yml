@@ -19,6 +19,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build only — no Release, no Telegram
+        type: boolean
+        default: false
 
 concurrency:
   group: ship
@@ -58,9 +63,12 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-          cache: gradle
 
-      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+      # Caches the Gradle distribution, dependencies and the build cache;
+      # unlike setup-java's cache it also saves when the job fails.
+      # The Android SDK is preinstalled on ubuntu-latest; AGP fetches
+      # any missing platform itself.
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
 
       - name: Resolve version
         id: meta
@@ -90,7 +98,9 @@ jobs:
           VERSION_CODE: ${{ steps.meta.outputs.version_code }}
         run: |
           chmod +x gradlew
-          ./gradlew :app:assembleRelease --no-daemon \
+          # lintVital is skipped: it costs ~45 s and this is a sideloaded app.
+          ./gradlew :app:assembleRelease --no-daemon --build-cache \
+            -x lintVitalRelease \
             -PversionCode="${VERSION_CODE}" \
             -PversionName="${VERSION_NAME}"
 
@@ -101,6 +111,7 @@ jobs:
           unzip -l "$apk" | grep -E 'META-INF/.*\.(RSA|EC|DSA)$'
 
       - name: Write latest.json
+        if: ${{ !inputs.dry_run }}
         env:
           VERSION_NAME: ${{ steps.meta.outputs.version_name }}
           VERSION_CODE: ${{ steps.meta.outputs.version_code }}
@@ -114,6 +125,7 @@ jobs:
           EOF
 
       - name: Publish GitHub Release
+        if: ${{ !inputs.dry_run }}
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           repository: bogachev-alex/viva_la_control
@@ -128,6 +140,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.DIST_REPO_TOKEN || github.token }}
 
       - name: Send APK to Telegram
+        if: ${{ !inputs.dry_run }}
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
