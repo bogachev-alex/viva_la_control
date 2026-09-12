@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Viva la Circle</string>
-    <string name="accessibility_service_label">Viva la Circle</string>
+    <string name="app_name">Viva La Control</string>
+    <string name="accessibility_service_label">Viva La Control</string>
     <string name="accessibility_service_description">Переназначает Wake UI BlueLM на выбранный TargetAction. Также может Remap затвор (Shutter).</string>
 
     <!-- Target actions -->
@@ -65,7 +65,7 @@
     <!-- Status banner -->
     <string name="service_active">Служба активна</string>
     <string name="service_inactive">Служба неактивна</string>
-    <string name="service_active_description">Viva la Circle включён и будет Remap настроенные триггеры в ваш TargetAction.</string>
+    <string name="service_active_description">Viva La Control включён и будет Remap настроенные триггеры в ваш TargetAction.</string>
     <string name="service_inactive_description">Нужно разрешение спецвозможностей, чтобы видеть Wake UI BlueLM и Remap его в ваш TargetAction.</string>
     <string name="process_running">Процесс запущен</string>
     <string name="waiting_for_trigger">Ожидание триггера</string>
@@ -154,12 +154,12 @@
     <!-- Onboarding -->
     <string name="setup_how_it_works">Как работает Remap</string>
     <string name="onboarding_why_title">1. Зачем нужны спецвозможности</string>
-    <string name="onboarding_why_body">На Vivo долгое нажатие питания открывает BlueLM без штатного Remap.\n\nOriginOS 6 часто не отдаёт KEYCODE_POWER службе спецвозможностей (клавиши затвора приходят). Viva la Circle следит за Wake UI BlueLM, закрывает его и запускает ваш TargetAction.</string>
+    <string name="onboarding_why_body">На Vivo долгое нажатие питания открывает BlueLM без штатного Remap.\n\nOriginOS 6 часто не отдаёт KEYCODE_POWER службе спецвозможностей (клавиши затвора приходят). Viva La Control следит за Wake UI BlueLM, закрывает его и запускает ваш TargetAction.</string>
     <string name="onboarding_setup_title">2. Пошаговая настройка</string>
     <string name="onboarding_step_1">Нажмите «Включить в спецвозможностях» выше.</string>
     <string name="onboarding_step_2">Откройте «Скачанные приложения» / «Установленные службы».</string>
-    <string name="onboarding_step_3">Выберите Viva la Circle.</string>
-    <string name="onboarding_step_4">Включите «Использовать Viva la Circle» и подтвердите.</string>
+    <string name="onboarding_step_3">Выберите Viva La Control.</string>
+    <string name="onboarding_step_4">Включите «Использовать Viva La Control» и подтвердите.</string>
     <string name="onboarding_how_title">3. Что происходит при Remap</string>
     <string name="onboarding_how_body">После включения:\n\n• Если прошивка открывает Wake UI BlueLM, служба закрывает его и запускает ваш TargetAction для BlueLM.\n• Короткое нажатие Power остаётся у прошивки.\n• Remap затвора — по желанию, в разделе «TargetAction для затвора».</string>
 
@@ -167,7 +167,7 @@
     <string name="huawei_allow_background">Huawei: разрешите фоновый запуск</string>
     <string name="huawei_allow_background_body">EMUI / HarmonyOS остановит службу спецвозможностей, если приложение не настроено вручную в Настройки → Батарея → Запуск приложений (разрешить автозапуск, вторичный запуск и работу в фоне).</string>
     <string name="huawei_open_app_launch">Открыть настройки запуска</string>
-    <string name="huawei_open_app_launch_toast">Откройте Настройки → Батарея → Запуск приложений → Viva la Circle</string>
+    <string name="huawei_open_app_launch_toast">Откройте Настройки → Батарея → Запуск приложений → Viva La Control</string>
     <string name="huawei_already_configured">Уже настроил / скрыть</string>
 
     <!-- HwCTS gate -->

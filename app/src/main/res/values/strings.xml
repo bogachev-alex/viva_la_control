@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Viva la Circle</string>
-    <string name="accessibility_service_label">Viva la Circle</string>
+    <string name="app_name">Viva La Control</string>
+    <string name="accessibility_service_label">Viva La Control</string>
     <string name="accessibility_service_description">Remaps BlueLM Wake UI to your chosen TargetAction. May also Remap the Shutter.</string>
 
     <!-- Target actions -->
@@ -65,7 +65,7 @@
     <!-- Status banner -->
     <string name="service_active">Service Active</string>
     <string name="service_inactive">Service Inactive</string>
-    <string name="service_active_description">Viva la Circle is enabled and will Remap configured triggers to your TargetAction.</string>
+    <string name="service_active_description">Viva La Control is enabled and will Remap configured triggers to your TargetAction.</string>
     <string name="service_inactive_description">Accessibility permission is required to see BlueLM Wake UI and Remap it to your TargetAction.</string>
     <string name="process_running">Process Running</string>
     <string name="waiting_for_trigger">Waiting for trigger</string>
@@ -154,12 +154,12 @@
     <!-- Onboarding -->
     <string name="setup_how_it_works">How Remap works</string>
     <string name="onboarding_why_title">1. Why accessibility is needed</string>
-    <string name="onboarding_why_body">On Vivo, a long power press opens BlueLM by default with no native Remap option.\n\nOriginOS 6 often does not deliver KEYCODE_POWER to accessibility (Shutter keys still arrive). Viva la Circle watches for BlueLM Wake UI, dismisses it, and fires your TargetAction.</string>
+    <string name="onboarding_why_body">On Vivo, a long power press opens BlueLM by default with no native Remap option.\n\nOriginOS 6 often does not deliver KEYCODE_POWER to accessibility (Shutter keys still arrive). Viva La Control watches for BlueLM Wake UI, dismisses it, and fires your TargetAction.</string>
     <string name="onboarding_setup_title">2. Step-by-step setup</string>
     <string name="onboarding_step_1">Tap Enable in Accessibility Settings above.</string>
     <string name="onboarding_step_2">Open Downloaded apps / Installed services.</string>
-    <string name="onboarding_step_3">Select Viva la Circle.</string>
-    <string name="onboarding_step_4">Turn on Use Viva la Circle and confirm.</string>
+    <string name="onboarding_step_3">Select Viva La Control.</string>
+    <string name="onboarding_step_4">Turn on Use Viva La Control and confirm.</string>
     <string name="onboarding_how_title">3. What happens on Remap</string>
     <string name="onboarding_how_body">Once enabled:\n\n• If the ROM opens BlueLM Wake UI, the service dismisses it, then fires your BlueLM TargetAction.\n• Short-press Power stays with the ROM.\n• Shutter Remap is optional — see the Shutter TargetAction section.</string>
 
@@ -167,7 +167,7 @@
     <string name="huawei_allow_background">Huawei: allow background launch</string>
     <string name="huawei_allow_background_body">EMUI / HarmonyOS will stop the accessibility service unless this app is set to Manage manually under Settings → Battery → App launch (allow Auto-launch, Secondary launch, and Run in background).</string>
     <string name="huawei_open_app_launch">Open App launch settings</string>
-    <string name="huawei_open_app_launch_toast">Open Settings → Battery → App launch → Viva la Circle</string>
+    <string name="huawei_open_app_launch_toast">Open Settings → Battery → App launch → Viva La Control</string>
     <string name="huawei_already_configured">Already set up / hide</string>
 
     <!-- HwCTS gate -->
