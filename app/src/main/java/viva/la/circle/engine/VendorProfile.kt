@@ -34,8 +34,8 @@ data class VendorProfile(
         )
 
         /**
-         * Huawei Celia. Single overlay; one BACK is the measured starting point (see
-         * PLAN_HUAWEI_V2.md). Poll/interval are slower than Vivo so a closing animation is not
+         * Huawei Celia. Single overlay; one BACK is the measured starting point
+         * (measured on-device). Poll/interval are slower than Vivo so a closing animation is not
          * mistaken for "still present".
          */
         val HUAWEI = VendorProfile(
