@@ -5,6 +5,6 @@
 #   https://d.android.com/r/tools/r8/keep-rules
 
 # Framework-instantiated from the manifest.
--keep class com.example.bluelm_interceptor.service.BlueLMInterceptorService { *; }
--keep class com.example.bluelm_interceptor.MainActivity { *; }
--keep class com.example.bluelm_interceptor.ui.AssistantChooserActivity { *; }
+-keep class viva.la.circle.service.BlueLMInterceptorService { *; }
+-keep class viva.la.circle.MainActivity { *; }
+-keep class viva.la.circle.ui.AssistantChooserActivity { *; }
