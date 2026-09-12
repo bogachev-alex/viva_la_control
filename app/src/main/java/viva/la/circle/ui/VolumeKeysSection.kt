@@ -287,7 +287,7 @@ private fun VolumeShortActionPicker(
                 },
             )
             if (isSelected && action == TargetAction.SPECIFIC_APP) {
-                val label = pkg?.let { appLabelFor(context, it) }
+                val label = pkg?.let { rememberAppLabel(it) }
                 Text(
                     text = if (label != null) {
                         stringResource(R.string.app_selected, label)

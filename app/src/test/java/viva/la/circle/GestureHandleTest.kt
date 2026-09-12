@@ -1,13 +1,14 @@
 package viva.la.circle
 
+import android.view.accessibility.AccessibilityWindowInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import android.view.accessibility.AccessibilityWindowInfo
 import viva.la.circle.gesture.GestureHandleConfig
 import viva.la.circle.gesture.GestureImmersiveDetector
+import viva.la.circle.gesture.GestureImmersiveGate
 import viva.la.circle.gesture.GestureNavEvent
 import viva.la.circle.gesture.GestureStrokeTracker
 import viva.la.circle.gesture.GestureZone
@@ -119,7 +120,8 @@ class GestureStrokeTrackerTest {
         t.onDown(100f, 100f)
         now = 500L
         assertEquals(GestureNavEvent.LongPress, t.onMove(100f, 100f))
-        assertNull(t.onUp(100f, 100f))
+        // Finger drift after long-press must not become horizontal Back/swipe.
+        assertNull(t.onUp(160f, 100f))
     }
 
     @Test
@@ -253,6 +255,17 @@ class GestureImmersiveDetectorTest {
     }
 
     @Test
+    fun navBarPresentIsNotImmersive() {
+        val windows = listOf(
+            win(AccessibilityWindowInfo.TYPE_SYSTEM, 0, 2320, 1080, 2400),
+            win(AccessibilityWindowInfo.TYPE_APPLICATION, 0, 0, 1080, 2400, focused = true),
+        )
+        assertFalse(
+            GestureImmersiveDetector.isImmersiveFullscreen(windows, 1080, 2400),
+        )
+    }
+
+    @Test
     fun partialAppWindowIsNotImmersive() {
         val windows = listOf(
             win(AccessibilityWindowInfo.TYPE_APPLICATION, 0, 200, 1080, 1400, focused = true),
@@ -260,5 +273,53 @@ class GestureImmersiveDetectorTest {
         assertFalse(
             GestureImmersiveDetector.isImmersiveFullscreen(windows, 1080, 2400),
         )
+    }
+}
+
+class GestureImmersiveGateTest {
+
+    @Test
+    fun flakyTrueSampleDoesNotHideImmediately() {
+        var now = 0L
+        val gate = GestureImmersiveGate(hideConfirmMs = 500L, nowMs = { now })
+        assertNull(gate.onSample(true))
+        assertTrue(gate.isConfirmingHide())
+        now = 200L
+        assertNull(gate.onSample(true))
+        now = 499L
+        assertNull(gate.onSample(true))
+    }
+
+    @Test
+    fun sustainedTruePublishesHide() {
+        var now = 0L
+        val gate = GestureImmersiveGate(hideConfirmMs = 500L, nowMs = { now })
+        assertNull(gate.onSample(true))
+        now = 500L
+        assertEquals(true, gate.onSample(true))
+        assertNull(gate.onSample(true))
+    }
+
+    @Test
+    fun briefTrueThenFalseNeverHides() {
+        var now = 0L
+        val gate = GestureImmersiveGate(hideConfirmMs = 500L, nowMs = { now })
+        assertNull(gate.onSample(true))
+        now = 100L
+        assertNull(gate.onSample(false))
+        assertFalse(gate.isConfirmingHide())
+        now = 700L
+        assertNull(gate.onSample(false))
+    }
+
+    @Test
+    fun leaveImmersivePublishesImmediately() {
+        var now = 0L
+        val gate = GestureImmersiveGate(hideConfirmMs = 500L, nowMs = { now })
+        assertNull(gate.onSample(true))
+        now = 500L
+        assertEquals(true, gate.onSample(true))
+        now = 600L
+        assertEquals(false, gate.onSample(false))
     }
 }

@@ -5,8 +5,11 @@ import android.view.accessibility.AccessibilityWindowInfo
 
 /**
  * Detects immersive / fullscreen UI (video, games) from accessibility windows.
- * When system status bar is gone and the app fills the screen, the gesture pill
- * should hide so it does not sit on top of content.
+ * When system status/nav chrome is gone and the app fills the screen, the gesture
+ * pill should hide so it does not sit on top of content.
+ *
+ * Single flaky snapshots are common during overlay touch — pair with
+ * [GestureImmersiveGate] before detaching the pill.
  */
 object GestureImmersiveDetector {
 
@@ -33,25 +36,50 @@ object GestureImmersiveDetector {
     ): Boolean {
         if (screenWidthPx <= 0 || screenHeightPx <= 0) return false
 
-        val statusBarMaxH = (screenHeightPx * 0.12f).toInt().coerceIn(24, 200)
-        val hasStatusBar = windows.any { w ->
-            w.type == AccessibilityWindowInfo.TYPE_SYSTEM &&
-                w.top <= 2 &&
-                w.height in 1..statusBarMaxH &&
-                w.width >= (screenWidthPx * 0.5f).toInt()
-        }
-        if (hasStatusBar) return false
+        // Any system chrome at top or bottom ⇒ not immersive (edge-to-edge apps
+        // still expose these windows; video/games typically remove both).
+        if (hasTopSystemChrome(windows, screenWidthPx, screenHeightPx)) return false
+        if (hasBottomSystemChrome(windows, screenWidthPx, screenHeightPx)) return false
 
         val appWindows = windows.filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
         if (appWindows.isEmpty()) return false
 
-        val focused = appWindows.firstOrNull { it.isFocused || it.isActive } ?: appWindows.maxByOrNull { it.height }
+        val focused = appWindows.firstOrNull { it.isFocused || it.isActive }
+            ?: appWindows.maxByOrNull { it.height }
             ?: return false
 
-        val fillsWidth = focused.width >= (screenWidthPx * 0.92f).toInt()
-        val fillsHeight = focused.height >= (screenHeightPx * 0.92f).toInt()
+        val fillsWidth = focused.width >= (screenWidthPx * 0.95f).toInt()
+        val fillsHeight = focused.height >= (screenHeightPx * 0.95f).toInt()
         val startsAtTop = focused.top <= 4
         return fillsWidth && fillsHeight && startsAtTop
+    }
+
+    private fun hasTopSystemChrome(
+        windows: List<WindowBounds>,
+        screenWidthPx: Int,
+        screenHeightPx: Int,
+    ): Boolean {
+        val maxH = (screenHeightPx * 0.15f).toInt().coerceIn(24, 280)
+        return windows.any { w ->
+            w.type == AccessibilityWindowInfo.TYPE_SYSTEM &&
+                w.top <= 8 &&
+                w.height in 1..maxH &&
+                w.width >= (screenWidthPx * 0.4f).toInt()
+        }
+    }
+
+    private fun hasBottomSystemChrome(
+        windows: List<WindowBounds>,
+        screenWidthPx: Int,
+        screenHeightPx: Int,
+    ): Boolean {
+        val maxH = (screenHeightPx * 0.18f).toInt().coerceIn(24, 320)
+        return windows.any { w ->
+            w.type == AccessibilityWindowInfo.TYPE_SYSTEM &&
+                w.bottom >= screenHeightPx - 8 &&
+                w.height in 1..maxH &&
+                w.width >= (screenWidthPx * 0.4f).toInt()
+        }
     }
 
     fun snapshotWindows(windows: List<AccessibilityWindowInfo>?): List<WindowBounds> {

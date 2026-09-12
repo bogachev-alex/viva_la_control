@@ -808,7 +808,7 @@ fun ActionSelectorList(
                                 text = if (!selectedSpecificPkg.isNullOrEmpty()) {
                                     stringResource(
                                         R.string.app_selected,
-                                        appLabelFor(context, selectedSpecificPkg),
+                                        rememberAppLabel(selectedSpecificPkg),
                                     )
                                 } else {
                                     stringResource(R.string.no_app_selected)
@@ -1771,6 +1771,16 @@ fun appLabelFor(context: android.content.Context, packageName: String): String {
     }
 }
 
+/**
+ * [appLabelFor] cached across recompositions. PackageManager lookups are Binder calls; doing
+ * them on every recomposition (each scroll-triggered state change) drops frames.
+ */
+@Composable
+fun rememberAppLabel(packageName: String): String {
+    val context = LocalContext.current
+    return remember(packageName) { appLabelFor(context, packageName) }
+}
+
 @Composable
 fun CircleToSearchGate(modifier: Modifier = Modifier) {
     val context = LocalContext.current
@@ -1912,14 +1922,16 @@ fun WillLaunchSummary(action: TargetAction?, specificPackage: String?) {
             true
         }
     }
-    val preview = RemapConfig.firePreview(
-        action = action,
-        specificPackage = specificPackage,
-        systemDefaultPackage = systemDefault.first,
-        ownPackage = context.packageName,
-        hwctsInstalled = hwctsInstalled,
-        appLabel = { pkg -> appLabelFor(context, pkg) },
-    )
+    val preview = remember(action, specificPackage, systemDefault, hwctsInstalled) {
+        RemapConfig.firePreview(
+            action = action,
+            specificPackage = specificPackage,
+            systemDefaultPackage = systemDefault.first,
+            ownPackage = context.packageName,
+            hwctsInstalled = hwctsInstalled,
+            appLabel = { pkg -> appLabelFor(context, pkg) },
+        )
+    }
     val summary = when (preview) {
         RemapConfig.FirePreview.Unset -> null
         RemapConfig.FirePreview.PassThrough -> stringResource(R.string.will_launch_none)

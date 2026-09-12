@@ -51,6 +51,13 @@ class GestureHandleController(
     private var prefsEnabled = false
     private var hideInFullscreen = true
     private var immersiveFullscreen = false
+    /** True while VoiceInteraction / assistant overlay should own Back gestures. */
+    private var assistantUiVisible = false
+    private var pendingReconcileAfterStroke = false
+    /** True while a finger stroke is active on the pill or edge strips. */
+    @Volatile
+    var isInteracting: Boolean = false
+        private set
 
     fun sync(state: InterceptorServiceState) {
         mainHandler.post {
@@ -70,7 +77,7 @@ class GestureHandleController(
         mainHandler.post {
             if (immersiveFullscreen == immersive) return@post
             immersiveFullscreen = immersive
-            reconcileAttachment()
+            reconcileAttachmentSafe()
             if (immersive) {
                 InterceptorStateRepository.diag("GH", "hidden (fullscreen/immersive)")
             } else {
@@ -79,10 +86,37 @@ class GestureHandleController(
         }
     }
 
+    /**
+     * Hide our overlay while an assistant / CTS session is up so edge Back goes to
+     * that session (not GLOBAL_ACTION_BACK into the app underneath).
+     */
+    fun setAssistantUiVisible(visible: Boolean) {
+        mainHandler.post {
+            if (assistantUiVisible == visible) return@post
+            assistantUiVisible = visible
+            reconcileAttachmentSafe()
+            InterceptorStateRepository.diag(
+                "GH",
+                if (visible) "hidden (assistant UI)" else "shown (left assistant UI)",
+            )
+        }
+    }
+
     private fun shouldShowOverlay(): Boolean =
-        prefsEnabled && !(hideInFullscreen && immersiveFullscreen)
+        prefsEnabled &&
+            !(hideInFullscreen && immersiveFullscreen) &&
+            !assistantUiVisible
+
+    private fun reconcileAttachmentSafe() {
+        if (isInteracting) {
+            pendingReconcileAfterStroke = true
+            return
+        }
+        reconcileAttachment()
+    }
 
     private fun reconcileAttachment() {
+        pendingReconcileAfterStroke = false
         if (shouldShowOverlay()) {
             ensureAttached()
             applyGeometry()
@@ -95,7 +129,12 @@ class GestureHandleController(
     }
 
     fun destroy() {
-        mainHandler.post { detach() }
+        mainHandler.post {
+            isInteracting = false
+            assistantUiVisible = false
+            pendingReconcileAfterStroke = false
+            detach()
+        }
     }
 
     private fun ensureAttached() {
@@ -211,6 +250,13 @@ class GestureHandleController(
         onEvent(event)
     }
 
+    private fun setInteracting(active: Boolean) {
+        isInteracting = active
+        if (!active && pendingReconcileAfterStroke) {
+            reconcileAttachment()
+        }
+    }
+
     private fun safeRemove(view: View?) {
         if (view == null) return
         try {
@@ -291,13 +337,18 @@ class GestureHandleController(
         private var scaleAnimator: ValueAnimator? = null
         private var homeAnimator: ValueAnimator? = null
         private var tracker: GestureStrokeTracker? = null
+        /** True from DOWN until UP/CANCEL — must keep ownership so OS nav does not steal the stroke. */
+        private var strokeOwned = false
+        /** Early LongPress/Recents already fired; ignore further classification until UP. */
+        private var gestureEmitted = false
         private val pollLongPress = object : Runnable {
             override fun run() {
+                if (!strokeOwned || gestureEmitted) return
                 val t = tracker ?: return
                 maybeRevealPress()
                 val ev = t.onMove(lastRawX, lastRawY)
                 if (ev != null) {
-                    onGestureResolved(ev)
+                    emitGesture(ev)
                     return
                 }
                 mainHandler.postDelayed(this, 16L)
@@ -391,6 +442,7 @@ class GestureHandleController(
         private fun setCaptureTouches(active: Boolean) {
             if (captureTouches == active) return
             captureTouches = active
+            setInteracting(active)
             applyTouchableRegion()
         }
 
@@ -486,6 +538,8 @@ class GestureHandleController(
                     homeAnimator?.cancel()
                     returningHome = false
                     pressShown = false
+                    gestureEmitted = false
+                    strokeOwned = true
                     downAtMs = android.os.SystemClock.uptimeMillis()
                     dragOffsetX = 0f
                     dragOffsetY = 0f
@@ -507,39 +561,46 @@ class GestureHandleController(
                     return true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    if (tracker == null || returningHome) return false
+                    if (!strokeOwned || returningHome) return false
                     lastRawX = event.rawX
                     lastRawY = event.rawY
                     updateDragFollow(event.rawX, event.rawY)
                     maybeRevealPress()
-                    val ev = tracker?.onMove(event.rawX, event.rawY)
-                    if (ev != null) {
-                        onGestureResolved(ev)
+                    if (!gestureEmitted) {
+                        val ev = tracker?.onMove(event.rawX, event.rawY)
+                        if (ev != null) {
+                            emitGesture(ev)
+                        }
                     }
                     return true
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (tracker == null) return false
+                    // Must return true after consuming DOWN — false leaks the stroke to OS nav
+                    // (Home/Back flicker under the assistant).
+                    if (!strokeOwned) return false
                     stopPoll()
-                    val ev = tracker?.onUp(event.rawX, event.rawY)
-                    tracker = null
-                    setCaptureTouches(false)
-                    if (ev != null) {
-                        onGestureResolved(ev)
+                    if (!gestureEmitted) {
+                        val ev = tracker?.onUp(event.rawX, event.rawY)
+                        if (ev != null) {
+                            emitGesture(ev)
+                        } else {
+                            if (pressShown) animatePress(pressed = false)
+                            animateReturnHome()
+                        }
                     } else {
                         if (pressShown) animatePress(pressed = false)
                         animateReturnHome()
                     }
+                    endStroke()
                     return true
                 }
                 MotionEvent.ACTION_CANCEL -> {
-                    if (tracker == null) return false
+                    if (!strokeOwned) return false
                     stopPoll()
                     tracker?.onCancel()
-                    tracker = null
-                    setCaptureTouches(false)
                     if (pressShown) animatePress(pressed = false)
                     animateReturnHome()
+                    endStroke()
                     return true
                 }
             }
@@ -602,16 +663,24 @@ class GestureHandleController(
             invalidate()
         }
 
-        private fun onGestureResolved(event: GestureNavEvent) {
+        private fun emitGesture(event: GestureNavEvent) {
+            if (gestureEmitted) return
+            gestureEmitted = true
             stopPoll()
             tracker = null
-            setCaptureTouches(false)
-            // Haptics live in the service only when an action actually fires.
+            // Keep captureTouches / strokeOwned until UP so the OS cannot steal the finger.
             if (pressShown) {
                 animatePress(pressed = false)
             }
             animateReturnHome()
             listener?.onGesture(event)
+        }
+
+        private fun endStroke() {
+            tracker = null
+            gestureEmitted = false
+            strokeOwned = false
+            setCaptureTouches(false)
         }
 
         private fun animateReturnHome() {
@@ -698,6 +767,7 @@ class GestureHandleController(
                         touchSlopPx = dp(GestureStrokeTracker.TOUCH_SLOP_DP),
                         swipeThresholdPx = dp(GestureStrokeTracker.SWIPE_THRESHOLD_DP),
                     ).also { it.onDown(event.x, event.y) }
+                    setInteracting(true)
                     return true
                 }
                 MotionEvent.ACTION_MOVE -> {
@@ -707,6 +777,7 @@ class GestureHandleController(
                 MotionEvent.ACTION_UP -> {
                     val ev = tracker?.onUp(event.x, event.y)
                     tracker = null
+                    setInteracting(false)
                     if (ev != null) {
                         listener?.onGesture(ev)
                     }
@@ -715,6 +786,7 @@ class GestureHandleController(
                 MotionEvent.ACTION_CANCEL -> {
                     tracker?.onCancel()
                     tracker = null
+                    setInteracting(false)
                     return true
                 }
             }

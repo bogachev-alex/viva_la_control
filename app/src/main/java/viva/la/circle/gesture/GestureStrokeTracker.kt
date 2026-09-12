@@ -71,8 +71,7 @@ class GestureStrokeTracker(
                     absDx < touchSlopPx &&
                     elapsed >= longPressTimeoutMs
                 ) {
-                    longPressFired = true
-                    return GestureNavEvent.LongPress
+                    return fireTerminal(GestureNavEvent.LongPress)
                 }
                 return null
             }
@@ -129,6 +128,9 @@ class GestureStrokeTracker(
     private fun fireTerminal(event: GestureNavEvent): GestureNavEvent {
         terminalFired = true
         tracking = false
+        if (event == GestureNavEvent.LongPress) {
+            longPressFired = true
+        }
         return event
     }
 

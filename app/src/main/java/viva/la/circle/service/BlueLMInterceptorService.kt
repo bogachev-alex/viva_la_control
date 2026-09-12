@@ -8,7 +8,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
 import android.os.PowerManager
-import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -19,6 +18,7 @@ import viva.la.circle.engine.VendorProfile
 import viva.la.circle.gesture.GestureHandleController
 import viva.la.circle.gesture.GestureHandleHaptics
 import viva.la.circle.gesture.GestureImmersiveDetector
+import viva.la.circle.gesture.GestureImmersiveGate
 import viva.la.circle.gesture.GestureNavEvent
 import viva.la.circle.media.MediaPlaybackGate
 import viva.la.circle.media.VolumeHaptics
@@ -51,6 +51,8 @@ class BlueLMInterceptorService : AccessibilityService() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var lastBlueLMInterceptMs: Long = 0L
+    /** Skip BlueLM dismiss-BACK Remap until this time (Gesture Handle intentional assist). */
+    private var suppressBlueLMRemapUntilMs: Long = 0L
     private var lastCameraInterceptMs: Long = 0L
     private var consumingCameraKey = false
     private var shutterDownEventTime = 0L
@@ -72,6 +74,7 @@ class BlueLMInterceptorService : AccessibilityService() {
     private var gestureHandleCollectJob: Job? = null
     private var immersiveRefreshJob: Job? = null
     private var lastImmersiveFullscreen: Boolean? = null
+    private val immersiveGate = GestureImmersiveGate()
 
     private val volumeUpGesture = VolumeGestureState()
     private val volumeDownGesture = VolumeGestureState()
@@ -88,15 +91,11 @@ class BlueLMInterceptorService : AccessibilityService() {
         var skipFired: Boolean = false
         var pendingSkipJob: Job? = null
 
-        /** Elapsed-time of the last native-volume tap DOWN, for double-press detection. */
-        var lastTapElapsedMs: Long = 0L
-
         fun reset() {
             pendingSkipJob?.cancel()
             pendingSkipJob = null
             consuming = false
             skipFired = false
-            lastTapElapsedMs = 0L
         }
     }
 
@@ -139,6 +138,8 @@ class BlueLMInterceptorService : AccessibilityService() {
 
     companion object {
         const val BLUELM_COOLDOWN_MS = 1500L
+        /** After Gesture Handle intentionally launches assist/CTS, skip BlueLM Remap. */
+        const val INTENTIONAL_ASSIST_SUPPRESS_MS = 2500L
         const val DOUBLE_PRESS_WINDOW_MS = KeyRemapPolicy.DOUBLE_PRESS_WINDOW_MS
         const val POWER_LONG_PRESS_MS = KeyRemapPolicy.POWER_LONG_PRESS_MS
         const val CAMERA_COOLDOWN_MS = KeyRemapPolicy.CAMERA_COOLDOWN_MS
@@ -228,6 +229,27 @@ class BlueLMInterceptorService : AccessibilityService() {
             assumePresent = assumePresent,
         )
 
+        fun shouldRemapBlueLMWake(
+            nowMs: Long,
+            lastInterceptMs: Long,
+            suppressRemapUntilMs: Long,
+            cooldownMs: Long = BLUELM_COOLDOWN_MS,
+        ): Boolean {
+            if (nowMs < suppressRemapUntilMs) return false
+            if (nowMs - lastInterceptMs < cooldownMs) return false
+            return true
+        }
+
+        /** Actions that call launchAssist / open assistant UI and may show Intercepted wake. */
+        fun actionMayOpenInterceptedWake(action: TargetAction): Boolean = when (action) {
+            TargetAction.CIRCLE_TO_SEARCH,
+            TargetAction.DEFAULT_ASSISTANT,
+            TargetAction.ASSISTANT_CHOOSER,
+            TargetAction.HWCTS,
+            -> true
+            else -> false
+        }
+
         fun isCameraApp(packageName: String?, className: String?, ownPackageName: String = ""): Boolean {
             val pkg = packageName?.lowercase() ?: ""
             if (pkg.isEmpty()) return false
@@ -275,7 +297,18 @@ class BlueLMInterceptorService : AccessibilityService() {
             if (pkg == "com.google.android.apps.googleassistant") return true
             if (pkg == "com.google.android.apps.bard") return true
             if (pkg == "com.google.android.apps.gemini") return true
+            // OEM assistants opened via launchAssist also need our edge strips gone.
+            if (InterceptedAssistant.isInterceptedAssistant(pkg, cls)) return true
             return false
+        }
+
+        fun shouldHideGestureHandleForAssistantUi(
+            packageName: String?,
+            className: String? = null,
+            ownPackage: String = "",
+        ): Boolean {
+            if (isAssistSessionForeground(packageName, className)) return true
+            return InterceptedAssistant.isWakeUi(packageName, className, ownPackage)
         }
 
         fun shouldPassThroughCameraKey(
@@ -434,12 +467,27 @@ class BlueLMInterceptorService : AccessibilityService() {
     ) {
         if (action == TargetAction.NONE) return
         if (haptic) GestureHandleHaptics.confirm(this)
+        // launchAssist can surface BlueLM/Celia Wake UI. Remap would then hammer BACK
+        // (often into the app under the overlay) and re-fire — suppress that window.
+        if (actionMayOpenInterceptedWake(action)) {
+            suppressBlueLMRemapUntilMs =
+                System.currentTimeMillis() + INTENTIONAL_ASSIST_SUPPRESS_MS
+            // Drop our edge strips before assist appears so Back closes assist, not the app.
+            gestureHandleController?.setAssistantUiVisible(true)
+            InterceptorStateRepository.diag(
+                "GH",
+                "suppress BlueLM Remap ${INTENTIONAL_ASSIST_SUPPRESS_MS}ms (intentional $action)",
+            )
+        }
         ActionExecutionEngine.executeAction(
             context = this,
             action = action,
             specificPackage = specificPackage,
             service = this,
         )
+        if (actionMayOpenInterceptedWake(action)) {
+            scheduleImmersiveRefresh(immediate = false)
+        }
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
@@ -448,6 +496,7 @@ class BlueLMInterceptorService : AccessibilityService() {
         immersiveRefreshJob?.cancel()
         immersiveRefreshJob = null
         lastImmersiveFullscreen = null
+        immersiveGate.reset()
         gestureHandleController?.destroy()
         gestureHandleController = null
         InterceptorStateRepository.updateRunning(isRunning = false)
@@ -462,6 +511,7 @@ class BlueLMInterceptorService : AccessibilityService() {
         immersiveRefreshJob?.cancel()
         immersiveRefreshJob = null
         lastImmersiveFullscreen = null
+        immersiveGate.reset()
         gestureHandleController?.destroy()
         gestureHandleController = null
         volumeLongPressListener?.unregister()
@@ -759,29 +809,22 @@ class BlueLMInterceptorService : AccessibilityService() {
 
         val passThroughVolume = effectiveShort is VolumeShortAction.Volume
 
-        // When the system long-press hook is active it owns skip (no volume change);
-        // leave native-volume keys fully to the OS instead of the double-press fallback.
-        if (passThroughVolume && volumeLongPressListener?.isRegistered == true) {
+        // Native volume short: always OS pass-through. Skip is only via system long-press
+        // (VolumeLongPressListener) when the ADB permission is granted.
+        if (passThroughVolume) {
             return false
         }
 
         when (event.action) {
             KeyEvent.ACTION_DOWN -> {
-                val nowElapsed = SystemClock.elapsedRealtime()
-                val window = state.volumeLongPressMs
-                val secondTapWithinWindow = passThroughVolume &&
-                    gesture.lastTapElapsedMs > 0L &&
-                    event.repeatCount == 0 &&
-                    (nowElapsed - gesture.lastTapElapsedMs) in 1..window
                 val decision = VolumeKeyPolicy.onDown(
                     armed = armed,
                     canSkip = canSkip,
-                    passThroughVolume = passThroughVolume,
+                    passThroughVolume = false,
                     repeatCount = event.repeatCount,
                     alreadyConsuming = gesture.consuming,
-                    secondTapWithinWindow = secondTapWithinWindow,
                 )
-                return applyVolumeDown(decision, gesture, state, raise, nowElapsed)
+                return applyVolumeDown(decision, gesture, state, raise)
             }
             KeyEvent.ACTION_UP -> {
                 val wasConsuming = gesture.consuming
@@ -806,41 +849,13 @@ class BlueLMInterceptorService : AccessibilityService() {
         gesture: VolumeGestureState,
         state: InterceptorServiceState,
         raise: Boolean,
-        nowElapsed: Long,
     ): Boolean {
         when (decision) {
             VolumeKeyPolicy.DownDecision.PassThrough -> return false
             VolumeKeyPolicy.DownDecision.ContinueConsuming -> return gesture.consuming
-            VolumeKeyPolicy.DownDecision.PassThroughArmDouble -> {
-                // First native-volume tap: OS applies the step; remember it so a quick
-                // second tap is recognised as a double-press. Never consumed.
-                gesture.consuming = false
-                gesture.skipFired = false
-                gesture.lastTapElapsedMs = nowElapsed
-                InterceptorStateRepository.diag(
-                    "VOL",
-                    "DOWN tap1 ${if (raise) "UP" else "DOWN"} (native volume, arm double)",
-                )
-                return false
-            }
-            VolumeKeyPolicy.DownDecision.ConsumeFireSkip -> {
-                // Second tap within the window: consume it (no volume step) and skip.
-                gesture.consuming = true
-                gesture.skipFired = true
-                gesture.lastTapElapsedMs = 0L
-                gesture.pendingSkipJob?.cancel()
-                gesture.pendingSkipJob = null
-                fireVolumeSkip(raise = raise, haptic = state.volumeHapticEnabled)
-                InterceptorStateRepository.diag(
-                    "VOL",
-                    "DOWN tap2 skip ${if (raise) "NEXT" else "PREV"} (double-press)",
-                )
-                return true
-            }
             VolumeKeyPolicy.DownDecision.ConsumeShortOnly -> {
                 gesture.consuming = true
                 gesture.skipFired = false
-                gesture.lastTapElapsedMs = 0L
                 gesture.pendingSkipJob?.cancel()
                 gesture.pendingSkipJob = null
                 InterceptorStateRepository.diag(
@@ -852,7 +867,6 @@ class BlueLMInterceptorService : AccessibilityService() {
             VolumeKeyPolicy.DownDecision.ConsumeStartSkipJob -> {
                 gesture.consuming = true
                 gesture.skipFired = false
-                gesture.lastTapElapsedMs = 0L
                 gesture.pendingSkipJob?.cancel()
                 val timeout = state.volumeLongPressMs
                 gesture.pendingSkipJob = serviceScope.launch {
@@ -933,17 +947,69 @@ class BlueLMInterceptorService : AccessibilityService() {
     private fun refreshGestureHandleImmersive() {
         val controller = gestureHandleController ?: return
         if (!InterceptorStateRepository.serviceState.value.gestureHandleEnabled) return
-        // Always track immersive truth; hide-pref only gates detach in the controller.
+        // Overlay touch briefly mutates accessibility windows → skip mid-stroke.
+        if (controller.isInteracting) {
+            scheduleImmersiveRefresh(immediate = false)
+            return
+        }
+        val now = System.currentTimeMillis()
+        val assistantUi = isAssistantUiShowingNow() || now < suppressBlueLMRemapUntilMs
+        controller.setAssistantUiVisible(assistantUi)
+
         val dm = resources.displayMetrics
         val snaps = GestureImmersiveDetector.snapshotWindows(windows)
-        val immersive = GestureImmersiveDetector.isImmersiveFullscreen(
+        val sample = GestureImmersiveDetector.isImmersiveFullscreen(
             windows = snaps,
             screenWidthPx = dm.widthPixels,
             screenHeightPx = dm.heightPixels,
         )
-        if (lastImmersiveFullscreen == immersive) return
-        lastImmersiveFullscreen = immersive
-        controller.setImmersiveFullscreen(immersive)
+        val decision = immersiveGate.onSample(sample)
+        if (decision == null) {
+            if (immersiveGate.isConfirmingHide()) {
+                scheduleImmersiveRefresh(immediate = false)
+            }
+            return
+        }
+        if (lastImmersiveFullscreen == decision) return
+        lastImmersiveFullscreen = decision
+        controller.setImmersiveFullscreen(decision)
+    }
+
+    /** Best-effort: focused/active window belongs to an assistant / CTS session. */
+    private fun isAssistantUiShowingNow(): Boolean {
+        val wins = try {
+            windows
+        } catch (_: Exception) {
+            return false
+        }
+        if (wins.isNullOrEmpty()) return false
+        val own = ownPackageName()
+        val candidates = buildList {
+            wins.firstOrNull { it.isFocused }?.let { add(it) }
+            wins.firstOrNull { it.isActive }?.let { w ->
+                if (none { existing -> existing === w }) add(w)
+            }
+        }
+        for (w in candidates) {
+            val root = try {
+                w.root
+            } catch (_: Exception) {
+                null
+            } ?: continue
+            try {
+                val pkg = root.packageName?.toString()
+                val cls = root.className?.toString()
+                if (shouldHideGestureHandleForAssistantUi(pkg, cls, own)) {
+                    return true
+                }
+            } finally {
+                try {
+                    root.recycle()
+                } catch (_: Exception) {
+                }
+            }
+        }
+        return false
     }
 
     private fun isScreenInteractive(): Boolean {
@@ -993,10 +1059,20 @@ class BlueLMInterceptorService : AccessibilityService() {
                 return
             }
 
-            if (now - lastBlueLMInterceptMs < BLUELM_COOLDOWN_MS) {
+            if (!shouldRemapBlueLMWake(
+                    nowMs = now,
+                    lastInterceptMs = lastBlueLMInterceptMs,
+                    suppressRemapUntilMs = suppressBlueLMRemapUntilMs,
+                )
+            ) {
+                val reason = if (now < suppressBlueLMRemapUntilMs) {
+                    "intentional-assist suppress"
+                } else {
+                    "cooldown"
+                }
                 InterceptorStateRepository.diag(
                     "BLM",
-                    "cooldown skip pkg=$packageName cls=$className",
+                    "$reason skip pkg=$packageName cls=$className",
                 )
                 return
             }

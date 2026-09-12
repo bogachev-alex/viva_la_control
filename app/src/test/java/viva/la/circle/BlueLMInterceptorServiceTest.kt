@@ -386,6 +386,76 @@ class BlueLMInterceptorServiceTest {
         }
         assertEquals(150L, BlueLMInterceptorService.CAMERA_COOLDOWN_MS)
         assertEquals(1500L, BlueLMInterceptorService.BLUELM_COOLDOWN_MS)
+        assertEquals(2500L, BlueLMInterceptorService.INTENTIONAL_ASSIST_SUPPRESS_MS)
+    }
+
+    @Test
+    fun intentionalAssistSuppressesBlueLMRemap() {
+        assertTrue(
+            BlueLMInterceptorService.shouldRemapBlueLMWake(
+                nowMs = 10_000L,
+                lastInterceptMs = 0L,
+                suppressRemapUntilMs = 0L,
+            ),
+        )
+        assertFalse(
+            BlueLMInterceptorService.shouldRemapBlueLMWake(
+                nowMs = 10_000L,
+                lastInterceptMs = 0L,
+                suppressRemapUntilMs = 10_500L,
+            ),
+        )
+        assertTrue(
+            BlueLMInterceptorService.shouldRemapBlueLMWake(
+                nowMs = 10_600L,
+                lastInterceptMs = 0L,
+                suppressRemapUntilMs = 10_500L,
+            ),
+        )
+        assertFalse(
+            BlueLMInterceptorService.shouldRemapBlueLMWake(
+                nowMs = 10_000L,
+                lastInterceptMs = 9_000L,
+                suppressRemapUntilMs = 0L,
+            ),
+        )
+        assertTrue(BlueLMInterceptorService.actionMayOpenInterceptedWake(TargetAction.CIRCLE_TO_SEARCH))
+        assertTrue(BlueLMInterceptorService.actionMayOpenInterceptedWake(TargetAction.DEFAULT_ASSISTANT))
+        assertFalse(BlueLMInterceptorService.actionMayOpenInterceptedWake(TargetAction.FLASHLIGHT))
+        assertFalse(BlueLMInterceptorService.actionMayOpenInterceptedWake(TargetAction.HOME))
+    }
+
+    @Test
+    fun gestureHandleHidesForAssistantPackages() {
+        val own = "viva.la.circle"
+        assertTrue(
+            BlueLMInterceptorService.shouldHideGestureHandleForAssistantUi(
+                "com.google.android.googlequicksearchbox",
+                "android.service.voice.VoiceInteractionWindow",
+                own,
+            ),
+        )
+        assertTrue(
+            BlueLMInterceptorService.shouldHideGestureHandleForAssistantUi(
+                "com.huawei.hiassistantoversea",
+                "com.huawei.hiassistantoversea.Main",
+                own,
+            ),
+        )
+        assertTrue(
+            BlueLMInterceptorService.shouldHideGestureHandleForAssistantUi(
+                "com.vivo.agent",
+                "com.vivo.agent.Wake",
+                own,
+            ),
+        )
+        assertFalse(
+            BlueLMInterceptorService.shouldHideGestureHandleForAssistantUi(
+                "com.android.chrome",
+                "com.android.chrome.Main",
+                own,
+            ),
+        )
     }
 
     @Test

@@ -206,15 +206,15 @@
     <!-- Volume keys -->
     <string name="volume_keys_section">Клавиши громкости</string>
     <string name="volume_skip_tracks">Клавиши громкости: смена трека</string>
-    <string name="volume_skip_tracks_hint">Пока играет медиа: Vol+ — следующий трек, Vol− — предыдущий. С ADB-разрешением ниже долгое удержание меняет трек без изменения громкости (работает и с выключенным экраном). Без него используется двойное нажатие, и громкость сдвигается максимум на один шаг.</string>
+    <string name="volume_skip_tracks_hint">Пока играет медиа: Vol+ — следующий трек, Vol− — предыдущий. С ADB-разрешением ниже долгое удержание меняет трек без изменения громкости (работает и с выключенным экраном). Короткое нажатие — обычная системная громкость.</string>
     <string name="volume_syslongpress_active">Долгое удержание активно — держите клавишу громкости для смены трека; громкость не меняется, работает с выключенным экраном.</string>
     <string name="volume_syslongpress_title">Чистая смена трека удержанием (без изменения громкости)</string>
-    <string name="volume_syslongpress_hint">Выдайте одно разрешение через ADB (один раз) — тот же приём, что у MacroDroid. После этого долгое удержание клавиши громкости меняет трек, не трогая громкость, даже с выключенным экраном. До этого используется двойное нажатие.</string>
+    <string name="volume_syslongpress_hint">Выдайте одно разрешение через ADB (один раз) — тот же приём, что у MacroDroid. После этого долгое удержание клавиши громкости меняет трек, не трогая громкость, даже с выключенным экраном.</string>
     <string name="volume_syslongpress_copy">Скопировать ADB-команду</string>
     <string name="volume_syslongpress_copied">ADB-команда скопирована</string>
     <string name="volume_short_remap">Короткое нажатие: Remap</string>
-    <string name="volume_short_remap_hint">Назначьте TargetAction на короткий тап по каждой клавише. Клавиши с режимом Volume остаются как системные, кроме двойного нажатия для смены трека.</string>
-    <string name="volume_long_press_duration">Окно двойного нажатия</string>
+    <string name="volume_short_remap_hint">Назначьте TargetAction на короткий тап по каждой клавише. Клавиши с режимом Volume остаются полностью системными. У переназначенных — долгое удержание меняет трек, пока играет медиа.</string>
+    <string name="volume_long_press_duration">Длительность удержания</string>
     <string name="volume_timeout_300">300 мс</string>
     <string name="volume_timeout_500">500 мс</string>
     <string name="volume_timeout_700">700 мс</string>
@@ -231,6 +231,7 @@
     <string name="volume_nls_enabled">Доступ к уведомлениям включён</string>
     <!-- Home menu -->
     <string name="menu_sections_title">Функции</string>
+    <string name="done">Готово</string>
     <string name="back">Назад</string>
     <string name="menu_not_set">Не задано</string>
     <string name="menu_on">Вкл</string>

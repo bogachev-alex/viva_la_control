@@ -206,15 +206,15 @@
     <!-- Volume keys -->
     <string name="volume_keys_section">Volume keys</string>
     <string name="volume_skip_tracks">Volume keys: skip tracks</string>
-    <string name="volume_skip_tracks_hint">While media plays: Vol+ skips to next, Vol− to previous. With the ADB permission below, a long-press skips with no volume change (works with the screen off). Without it, a double-press (two quick taps) is used and volume moves at most one step.</string>
+    <string name="volume_skip_tracks_hint">While media plays: Vol+ skips to next, Vol− to previous. With the ADB permission below, a long-press skips with no volume change (works with the screen off). Short taps keep system volume.</string>
     <string name="volume_syslongpress_active">Long-press skip active — hold a volume key to skip; volume stays put, works with the screen off.</string>
     <string name="volume_syslongpress_title">Clean long-press skip (no volume change)</string>
-    <string name="volume_syslongpress_hint">Grant one permission once over ADB (same trick MacroDroid uses). Then a long-press of a volume key skips a track without touching volume, even with the screen off. Until then a double-press is used.</string>
+    <string name="volume_syslongpress_hint">Grant one permission once over ADB (same trick MacroDroid uses). Then a long-press of a volume key skips a track without touching volume, even with the screen off.</string>
     <string name="volume_syslongpress_copy">Copy ADB command</string>
     <string name="volume_syslongpress_copied">ADB command copied</string>
     <string name="volume_short_remap">Short-press volume: remap</string>
-    <string name="volume_short_remap_hint">Assign a TargetAction to a short volume tap per key. Keys set to Volume stay system-like except for the double-press skip.</string>
-    <string name="volume_long_press_duration">Double-press window</string>
+    <string name="volume_short_remap_hint">Assign a TargetAction to a short volume tap per key. Keys set to Volume stay fully system-like. Remapped keys support long-press skip while media plays.</string>
+    <string name="volume_long_press_duration">Long-press duration</string>
     <string name="volume_timeout_300">300 ms</string>
     <string name="volume_timeout_500">500 ms</string>
     <string name="volume_timeout_700">700 ms</string>
@@ -231,6 +231,7 @@
     <string name="volume_nls_enabled">Notification access on</string>
     <!-- Home menu -->
     <string name="menu_sections_title">Functions</string>
+    <string name="done">Done</string>
     <string name="back">Back</string>
     <string name="menu_not_set">Not set</string>
     <string name="menu_on">On</string>

@@ -24,7 +24,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -149,12 +148,10 @@ private fun SettingsMenuRow(
 /** One-line summary of the section's current value, so the menu doubles as an overview. */
 @Composable
 private fun sectionSubtitle(section: SettingsSection, state: InterceptorServiceState): String? {
-    val context = LocalContext.current
-
     @Composable
     fun actionLabel(action: TargetAction?, pkg: String?): String = when {
         action == null -> stringResource(R.string.menu_not_set)
-        action == TargetAction.SPECIFIC_APP && pkg != null -> appLabelFor(context, pkg)
+        action == TargetAction.SPECIFIC_APP && pkg != null -> rememberAppLabel(pkg)
         else -> stringResource(action.titleRes)
     }
     val on = stringResource(R.string.menu_on)

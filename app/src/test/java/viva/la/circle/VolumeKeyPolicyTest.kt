@@ -24,8 +24,8 @@ class VolumeKeyPolicyTest {
     }
 
     @Test
-    fun armForSkipWhenMediaPlaying() {
-        assertTrue(
+    fun nativeVolumeShortNeverArms() {
+        assertFalse(
             VolumeKeyPolicy.shouldArmKey(
                 skipTracksEnabled = true,
                 shortRemapEnabled = false,
@@ -37,13 +37,13 @@ class VolumeKeyPolicyTest {
     }
 
     @Test
-    fun noArmWhenSkipOnButNoMediaAndShortIsVolume() {
-        assertFalse(
+    fun armWhenSkipOnAndShortRemap() {
+        assertTrue(
             VolumeKeyPolicy.shouldArmKey(
                 skipTracksEnabled = true,
-                shortRemapEnabled = false,
-                shortAction = VolumeShortAction.Volume,
-                mediaPlaying = false,
+                shortRemapEnabled = true,
+                shortAction = VolumeShortAction.Remap(TargetAction.FLASHLIGHT),
+                mediaPlaying = true,
                 inCall = false,
             ),
         )
@@ -72,61 +72,25 @@ class VolumeKeyPolicyTest {
     }
 
     @Test
-    fun downFirstNativeVolumeTapArmsDouble() {
-        assertEquals(
-            VolumeKeyPolicy.DownDecision.PassThroughArmDouble,
-            VolumeKeyPolicy.onDown(
-                armed = true,
-                canSkip = true,
-                passThroughVolume = true,
-                repeatCount = 0,
-                alreadyConsuming = false,
-                secondTapWithinWindow = false,
-            ),
-        )
-    }
-
-    @Test
-    fun downSecondNativeVolumeTapFiresSkip() {
-        assertEquals(
-            VolumeKeyPolicy.DownDecision.ConsumeFireSkip,
-            VolumeKeyPolicy.onDown(
-                armed = true,
-                canSkip = true,
-                passThroughVolume = true,
-                repeatCount = 0,
-                alreadyConsuming = false,
-                secondTapWithinWindow = true,
-            ),
-        )
-    }
-
-    @Test
-    fun downNativeVolumeHoldPassesThrough() {
+    fun downNativeVolumeAlwaysPassesThrough() {
         assertEquals(
             VolumeKeyPolicy.DownDecision.PassThrough,
             VolumeKeyPolicy.onDown(
                 armed = true,
                 canSkip = true,
                 passThroughVolume = true,
-                repeatCount = 3,
+                repeatCount = 0,
                 alreadyConsuming = false,
-                secondTapWithinWindow = false,
             ),
         )
-    }
-
-    @Test
-    fun downNativeVolumeNoSkipWhenNoMedia() {
         assertEquals(
             VolumeKeyPolicy.DownDecision.PassThrough,
             VolumeKeyPolicy.onDown(
-                armed = true,
-                canSkip = false,
+                armed = false,
+                canSkip = true,
                 passThroughVolume = true,
                 repeatCount = 0,
                 alreadyConsuming = false,
-                secondTapWithinWindow = true,
             ),
         )
     }
@@ -141,7 +105,6 @@ class VolumeKeyPolicyTest {
                 passThroughVolume = false,
                 repeatCount = 0,
                 alreadyConsuming = false,
-                secondTapWithinWindow = false,
             ),
         )
     }
@@ -156,7 +119,6 @@ class VolumeKeyPolicyTest {
                 passThroughVolume = false,
                 repeatCount = 0,
                 alreadyConsuming = false,
-                secondTapWithinWindow = false,
             ),
         )
     }
@@ -171,7 +133,6 @@ class VolumeKeyPolicyTest {
                 passThroughVolume = false,
                 repeatCount = 2,
                 alreadyConsuming = true,
-                secondTapWithinWindow = false,
             ),
         )
     }

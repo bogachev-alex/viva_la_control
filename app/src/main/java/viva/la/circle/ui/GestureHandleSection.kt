@@ -220,8 +220,9 @@ fun GestureHandleCard(
                     valueRange = GestureHandleConfig.MIN_OPACITY_PERCENT.toFloat()..
                         GestureHandleConfig.MAX_OPACITY_PERCENT.toFloat(),
                     onValueChange = { v ->
+                        val changed = v.toInt() != opacitySlider.toInt()
                         opacitySlider = v
-                        onOpacityChange(v.toInt())
+                        if (changed) onOpacityChange(v.toInt())
                     },
                 )
 
@@ -272,8 +273,9 @@ fun GestureHandleCard(
                     valueRange = GestureHandleConfig.MIN_WIDTH_DP.toFloat()..
                         GestureHandleConfig.MAX_WIDTH_DP.toFloat(),
                     onValueChange = { v ->
+                        val changed = v.toInt() != widthSlider.toInt()
                         widthSlider = v
-                        onWidthChange(v.toInt())
+                        if (changed) onWidthChange(v.toInt())
                     },
                 )
 
@@ -287,8 +289,9 @@ fun GestureHandleCard(
                     valueRange = GestureHandleConfig.MIN_HEIGHT_DP.toFloat()..
                         GestureHandleConfig.MAX_HEIGHT_DP.toFloat(),
                     onValueChange = { v ->
+                        val changed = v.toInt() != heightSlider.toInt()
                         heightSlider = v
-                        onHeightChange(v.toInt())
+                        if (changed) onHeightChange(v.toInt())
                     },
                 )
 
@@ -302,8 +305,9 @@ fun GestureHandleCard(
                     valueRange = GestureHandleConfig.MIN_BOTTOM_OFFSET_DP.toFloat()..
                         GestureHandleConfig.MAX_BOTTOM_OFFSET_DP.toFloat(),
                     onValueChange = { v ->
+                        val changed = v.toInt() != offsetSlider.toInt()
                         offsetSlider = v
-                        onBottomOffsetChange(v.toInt())
+                        if (changed) onBottomOffsetChange(v.toInt())
                     },
                 )
 
@@ -319,13 +323,8 @@ fun GestureHandleCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                Text(
-                    text = stringResource(R.string.gesture_handle_tap_action),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold,
-                )
-                ActionSelectorList(
+                ActionPickerRow(
+                    label = stringResource(R.string.gesture_handle_tap_action),
                     selectedAction = state.gestureTapAction,
                     selectedSpecificPkg = state.gestureTapSpecificPackage,
                     onSelectAction = { action ->
@@ -335,13 +334,8 @@ fun GestureHandleCard(
                     availableActions = TargetAction.gestureHandleEntries(),
                 )
 
-                Text(
-                    text = stringResource(R.string.gesture_handle_long_press_action),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold,
-                )
-                ActionSelectorList(
+                ActionPickerRow(
+                    label = stringResource(R.string.gesture_handle_long_press_action),
                     selectedAction = state.gestureLongPressAction,
                     selectedSpecificPkg = state.gestureLongPressSpecificPackage,
                     onSelectAction = { action ->
@@ -351,13 +345,8 @@ fun GestureHandleCard(
                     availableActions = TargetAction.gestureHandleEntries(),
                 )
 
-                Text(
-                    text = stringResource(R.string.gesture_handle_swipe_up_action),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold,
-                )
-                ActionSelectorList(
+                ActionPickerRow(
+                    label = stringResource(R.string.gesture_handle_swipe_up_action),
                     selectedAction = state.gestureSwipeUpAction,
                     selectedSpecificPkg = state.gestureSwipeUpSpecificPackage,
                     onSelectAction = { action ->
@@ -367,13 +356,8 @@ fun GestureHandleCard(
                     availableActions = TargetAction.gestureHandleEntries(),
                 )
 
-                Text(
-                    text = stringResource(R.string.gesture_handle_swipe_left_action),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold,
-                )
-                ActionSelectorList(
+                ActionPickerRow(
+                    label = stringResource(R.string.gesture_handle_swipe_left_action),
                     selectedAction = state.gestureSwipeLeftAction,
                     selectedSpecificPkg = state.gestureSwipeLeftSpecificPackage,
                     onSelectAction = { action ->
@@ -383,13 +367,8 @@ fun GestureHandleCard(
                     availableActions = TargetAction.gestureHandleEntries(),
                 )
 
-                Text(
-                    text = stringResource(R.string.gesture_handle_swipe_right_action),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold,
-                )
-                ActionSelectorList(
+                ActionPickerRow(
+                    label = stringResource(R.string.gesture_handle_swipe_right_action),
                     selectedAction = state.gestureSwipeRightAction,
                     selectedSpecificPkg = state.gestureSwipeRightSpecificPackage,
                     onSelectAction = { action ->
