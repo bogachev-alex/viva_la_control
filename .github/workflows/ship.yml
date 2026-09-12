@@ -98,7 +98,7 @@ jobs:
           VERSION_CODE: ${{ steps.meta.outputs.version_code }}
         run: |
           chmod +x gradlew
-          # lintVital is skipped: it costs ~45 s and this is a sideloaded app.
+          # lintVital is skipped: it costs ~45 s and the APK is self-distributed.
           ./gradlew :app:assembleRelease --no-daemon --build-cache \
             -x lintVitalRelease \
             -PversionCode="${VERSION_CODE}" \
