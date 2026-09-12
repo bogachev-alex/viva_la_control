@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
 import android.os.PowerManager
+import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -16,9 +17,12 @@ import android.media.AudioManager
 import viva.la.circle.engine.ActionExecutionEngine
 import viva.la.circle.engine.VendorProfile
 import viva.la.circle.gesture.GestureHandleController
+import viva.la.circle.gesture.GestureHandleHaptics
+import viva.la.circle.gesture.GestureImmersiveDetector
 import viva.la.circle.gesture.GestureNavEvent
 import viva.la.circle.media.MediaPlaybackGate
 import viva.la.circle.media.VolumeHaptics
+import viva.la.circle.media.VolumeLongPressListener
 import viva.la.circle.model.BlueLMActionConfig
 import viva.la.circle.model.TargetAction
 import viva.la.circle.model.VolumeShortAction
@@ -66,27 +70,33 @@ class BlueLMInterceptorService : AccessibilityService() {
     private var loggedMissingPowerKey = false
     private var gestureHandleController: GestureHandleController? = null
     private var gestureHandleCollectJob: Job? = null
+    private var immersiveRefreshJob: Job? = null
+    private var lastImmersiveFullscreen: Boolean? = null
 
     private val volumeUpGesture = VolumeGestureState()
     private val volumeDownGesture = VolumeGestureState()
 
+    /**
+     * System volume long-press hook (needs the granted [VolumeLongPressListener.PERMISSION]).
+     * When active, a long-press fires skip with **no** volume change and the accessibility
+     * volume path stays pure pass-through; short presses keep native volume.
+     */
+    private var volumeLongPressListener: VolumeLongPressListener? = null
+
     private class VolumeGestureState {
         var consuming: Boolean = false
-        var observing: Boolean = false
         var skipFired: Boolean = false
         var pendingSkipJob: Job? = null
-        var pendingVolumeGuardJob: Job? = null
-        var volumeBaseline: MediaPlaybackGate.VolumeSnapshot? = null
+
+        /** Elapsed-time of the last native-volume tap DOWN, for double-press detection. */
+        var lastTapElapsedMs: Long = 0L
 
         fun reset() {
             pendingSkipJob?.cancel()
             pendingSkipJob = null
-            pendingVolumeGuardJob?.cancel()
-            pendingVolumeGuardJob = null
             consuming = false
-            observing = false
             skipFired = false
-            volumeBaseline = null
+            lastTapElapsedMs = 0L
         }
     }
 
@@ -310,7 +320,8 @@ class BlueLMInterceptorService : AccessibilityService() {
         registerScreenOffReceiver()
         val info = serviceInfo
         if (info != null) {
-            info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+            info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
+                AccessibilityEvent.TYPE_WINDOWS_CHANGED
             info.flags = info.flags or
                 AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS or
                 AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
@@ -324,6 +335,8 @@ class BlueLMInterceptorService : AccessibilityService() {
                 "vendorShutterKeyCodes=$vendorShutterKeyCodes",
             force = true,
         )
+        registerVolumeLongPressListener()
+
         gestureHandleController = GestureHandleController(this) { event ->
             handleGestureNavEvent(event)
         }
@@ -333,32 +346,94 @@ class BlueLMInterceptorService : AccessibilityService() {
                 gestureHandleController?.sync(state)
             }
         }
+        scheduleImmersiveRefresh(immediate = true)
+    }
+
+    private fun registerVolumeLongPressListener() {
+        val listener = volumeLongPressListener ?: VolumeLongPressListener(this) { keyCode ->
+            onVolumeLongPress(keyCode)
+        }.also { volumeLongPressListener = it }
+        val ok = listener.register()
+        InterceptorStateRepository.setVolumeLongPressListenerActive(ok)
+        InterceptorStateRepository.diag(
+            "VOL",
+            "long-press listener register ok=$ok granted=${listener.isPermissionGranted()}",
+            force = true,
+        )
+    }
+
+    /** System-routed volume long-press (no volume change). Fires one skip per hold. */
+    private fun onVolumeLongPress(keyCode: Int) {
+        val state = InterceptorStateRepository.serviceState.value
+        if (!state.volumeSkipTracksEnabled) return
+        val audioManager = getSystemService(AudioManager::class.java)
+        if (audioManager != null && MediaPlaybackGate.isInCall(audioManager)) return
+        val raise = keyCode == KeyEvent.KEYCODE_VOLUME_UP
+        fireVolumeSkip(raise = raise, haptic = state.volumeHapticEnabled)
+        InterceptorStateRepository.diag(
+            "VOL",
+            "system long-press skip ${if (raise) "NEXT" else "PREV"} (no volume change)",
+        )
     }
 
     private fun handleGestureNavEvent(event: GestureNavEvent) {
+        val state = InterceptorStateRepository.serviceState.value
+        val haptic = state.gestureHapticEnabled(event)
         when (event) {
-            GestureNavEvent.Back -> performGlobalAction(GLOBAL_ACTION_BACK)
-            GestureNavEvent.Recents -> performGlobalAction(GLOBAL_ACTION_RECENTS)
+            GestureNavEvent.Back -> {
+                if (haptic) GestureHandleHaptics.confirm(this)
+                performGlobalAction(GLOBAL_ACTION_BACK)
+            }
+            GestureNavEvent.Recents -> {
+                if (haptic) GestureHandleHaptics.confirm(this)
+                performGlobalAction(GLOBAL_ACTION_RECENTS)
+            }
             GestureNavEvent.Tap -> {
-                val state = InterceptorStateRepository.serviceState.value
-                fireGestureHandleAction(state.gestureTapAction, state.gestureTapSpecificPackage)
+                // Short tap with None: no haptic, no action.
+                fireGestureHandleAction(
+                    action = state.gestureTapAction,
+                    specificPackage = state.gestureTapSpecificPackage,
+                    haptic = haptic,
+                )
             }
             GestureNavEvent.LongPress -> {
-                val state = InterceptorStateRepository.serviceState.value
                 fireGestureHandleAction(
-                    state.gestureLongPressAction,
-                    state.gestureLongPressSpecificPackage,
+                    action = state.gestureLongPressAction,
+                    specificPackage = state.gestureLongPressSpecificPackage,
+                    haptic = haptic,
                 )
             }
             GestureNavEvent.SwipeUp -> {
-                val state = InterceptorStateRepository.serviceState.value
-                fireGestureHandleAction(state.gestureSwipeUpAction, state.gestureSwipeUpSpecificPackage)
+                fireGestureHandleAction(
+                    action = state.gestureSwipeUpAction,
+                    specificPackage = state.gestureSwipeUpSpecificPackage,
+                    haptic = haptic,
+                )
+            }
+            GestureNavEvent.SwipeLeft -> {
+                fireGestureHandleAction(
+                    action = state.gestureSwipeLeftAction,
+                    specificPackage = state.gestureSwipeLeftSpecificPackage,
+                    haptic = haptic,
+                )
+            }
+            GestureNavEvent.SwipeRight -> {
+                fireGestureHandleAction(
+                    action = state.gestureSwipeRightAction,
+                    specificPackage = state.gestureSwipeRightSpecificPackage,
+                    haptic = haptic,
+                )
             }
         }
     }
 
-    private fun fireGestureHandleAction(action: TargetAction, specificPackage: String?) {
+    private fun fireGestureHandleAction(
+        action: TargetAction,
+        specificPackage: String?,
+        haptic: Boolean = false,
+    ) {
         if (action == TargetAction.NONE) return
+        if (haptic) GestureHandleHaptics.confirm(this)
         ActionExecutionEngine.executeAction(
             context = this,
             action = action,
@@ -370,6 +445,9 @@ class BlueLMInterceptorService : AccessibilityService() {
     override fun onUnbind(intent: Intent?): Boolean {
         gestureHandleCollectJob?.cancel()
         gestureHandleCollectJob = null
+        immersiveRefreshJob?.cancel()
+        immersiveRefreshJob = null
+        lastImmersiveFullscreen = null
         gestureHandleController?.destroy()
         gestureHandleController = null
         InterceptorStateRepository.updateRunning(isRunning = false)
@@ -381,8 +459,14 @@ class BlueLMInterceptorService : AccessibilityService() {
         super.onDestroy()
         gestureHandleCollectJob?.cancel()
         gestureHandleCollectJob = null
+        immersiveRefreshJob?.cancel()
+        immersiveRefreshJob = null
+        lastImmersiveFullscreen = null
         gestureHandleController?.destroy()
         gestureHandleController = null
+        volumeLongPressListener?.unregister()
+        volumeLongPressListener = null
+        InterceptorStateRepository.setVolumeLongPressListenerActive(false)
         InterceptorStateRepository.updateRunning(isRunning = false)
         unregisterScreenOffReceiver()
         serviceScope.cancel()
@@ -656,7 +740,6 @@ class BlueLMInterceptorService : AccessibilityService() {
         } else {
             VolumeShortAction.Volume
         }
-        val passThroughVolume = effectiveShort is VolumeShortAction.Volume
 
         val audioManager = getSystemService(AudioManager::class.java)
         val inCall = audioManager != null && MediaPlaybackGate.isInCall(audioManager)
@@ -674,45 +757,41 @@ class BlueLMInterceptorService : AccessibilityService() {
             inCall = inCall,
         )
 
+        val passThroughVolume = effectiveShort is VolumeShortAction.Volume
+
+        // When the system long-press hook is active it owns skip (no volume change);
+        // leave native-volume keys fully to the OS instead of the double-press fallback.
+        if (passThroughVolume && volumeLongPressListener?.isRegistered == true) {
+            return false
+        }
+
         when (event.action) {
             KeyEvent.ACTION_DOWN -> {
+                val nowElapsed = SystemClock.elapsedRealtime()
+                val window = state.volumeLongPressMs
+                val secondTapWithinWindow = passThroughVolume &&
+                    gesture.lastTapElapsedMs > 0L &&
+                    event.repeatCount == 0 &&
+                    (nowElapsed - gesture.lastTapElapsedMs) in 1..window
                 val decision = VolumeKeyPolicy.onDown(
                     armed = armed,
                     canSkip = canSkip,
                     passThroughVolume = passThroughVolume,
                     repeatCount = event.repeatCount,
                     alreadyConsuming = gesture.consuming,
-                    alreadyObserving = gesture.observing,
-                    skipFired = gesture.skipFired,
+                    secondTapWithinWindow = secondTapWithinWindow,
                 )
-                if (decision == VolumeKeyPolicy.DownDecision.PassThrough &&
-                    event.repeatCount == 0 &&
-                    state.volumeSkipTracksEnabled
-                ) {
-                    InterceptorStateRepository.diag(
-                        "VOL",
-                        "pass-through ${if (raise) "UP" else "DOWN"} " +
-                            "armed=$armed canSkip=$canSkip media=$mediaPlaying " +
-                            "nls=${MediaPlaybackGate.isNotificationListenerEnabled(this)}",
-                    )
-                }
-                return applyVolumeDown(decision, gesture, state, raise)
+                return applyVolumeDown(decision, gesture, state, raise, nowElapsed)
             }
             KeyEvent.ACTION_UP -> {
                 val wasConsuming = gesture.consuming
-                val wasObserving = gesture.observing
                 val skipFired = gesture.skipFired
                 gesture.pendingSkipJob?.cancel()
                 gesture.pendingSkipJob = null
-                gesture.pendingVolumeGuardJob?.cancel()
-                gesture.pendingVolumeGuardJob = null
                 gesture.consuming = false
-                gesture.observing = false
                 gesture.skipFired = false
-                gesture.volumeBaseline = null
                 val decision = VolumeKeyPolicy.onUp(
                     wasConsuming = wasConsuming,
-                    wasObserving = wasObserving,
                     skipFired = skipFired,
                     shortAction = effectiveShort,
                 )
@@ -727,66 +806,41 @@ class BlueLMInterceptorService : AccessibilityService() {
         gesture: VolumeGestureState,
         state: InterceptorServiceState,
         raise: Boolean,
+        nowElapsed: Long,
     ): Boolean {
         when (decision) {
             VolumeKeyPolicy.DownDecision.PassThrough -> return false
             VolumeKeyPolicy.DownDecision.ContinueConsuming -> return gesture.consuming
-            VolumeKeyPolicy.DownDecision.ObserveStartSkipJob -> {
-                gesture.observing = true
+            VolumeKeyPolicy.DownDecision.PassThroughArmDouble -> {
+                // First native-volume tap: OS applies the step; remember it so a quick
+                // second tap is recognised as a double-press. Never consumed.
                 gesture.consuming = false
                 gesture.skipFired = false
-                gesture.volumeBaseline = MediaPlaybackGate.captureVolumeSnapshot(this)
-                gesture.pendingSkipJob?.cancel()
-                val timeout = state.volumeLongPressMs
-                gesture.pendingSkipJob = serviceScope.launch {
-                    delay(timeout)
-                    if (!gesture.observing || gesture.skipFired) return@launch
-                    gesture.skipFired = true
-                    val baseline = gesture.volumeBaseline
-                    if (baseline != null) {
-                        val restored = MediaPlaybackGate.restoreVolumeSnapshot(
-                            this@BlueLMInterceptorService,
-                            baseline,
-                        )
-                        InterceptorStateRepository.diag(
-                            "VOL",
-                            "restore volume before skip ok=$restored " +
-                                "stream=${baseline.streamVolume}",
-                        )
-                    }
-                    fireVolumeSkip(raise = raise, haptic = state.volumeHapticEnabled)
-                    // System may keep ramping volume until UP — hold baseline until release.
-                    gesture.pendingVolumeGuardJob?.cancel()
-                    if (baseline != null) {
-                        gesture.pendingVolumeGuardJob = serviceScope.launch {
-                            while (gesture.observing && gesture.skipFired) {
-                                MediaPlaybackGate.restoreVolumeSnapshot(
-                                    this@BlueLMInterceptorService,
-                                    baseline,
-                                )
-                                delay(40)
-                            }
-                        }
-                    }
-                }
+                gesture.lastTapElapsedMs = nowElapsed
                 InterceptorStateRepository.diag(
                     "VOL",
-                    "DOWN observe skip ${if (raise) "UP" else "DOWN"} timeout=${timeout}ms " +
-                        "(native volume, restore on skip)",
+                    "DOWN tap1 ${if (raise) "UP" else "DOWN"} (native volume, arm double)",
                 )
                 return false
             }
-            VolumeKeyPolicy.DownDecision.SwallowAfterSkip -> {
+            VolumeKeyPolicy.DownDecision.ConsumeFireSkip -> {
+                // Second tap within the window: consume it (no volume step) and skip.
+                gesture.consuming = true
+                gesture.skipFired = true
+                gesture.lastTapElapsedMs = 0L
+                gesture.pendingSkipJob?.cancel()
+                gesture.pendingSkipJob = null
+                fireVolumeSkip(raise = raise, haptic = state.volumeHapticEnabled)
                 InterceptorStateRepository.diag(
                     "VOL",
-                    "DOWN swallow after skip ${if (raise) "UP" else "DOWN"}",
+                    "DOWN tap2 skip ${if (raise) "NEXT" else "PREV"} (double-press)",
                 )
                 return true
             }
             VolumeKeyPolicy.DownDecision.ConsumeShortOnly -> {
                 gesture.consuming = true
-                gesture.observing = false
                 gesture.skipFired = false
+                gesture.lastTapElapsedMs = 0L
                 gesture.pendingSkipJob?.cancel()
                 gesture.pendingSkipJob = null
                 InterceptorStateRepository.diag(
@@ -797,8 +851,8 @@ class BlueLMInterceptorService : AccessibilityService() {
             }
             VolumeKeyPolicy.DownDecision.ConsumeStartSkipJob -> {
                 gesture.consuming = true
-                gesture.observing = false
                 gesture.skipFired = false
+                gesture.lastTapElapsedMs = 0L
                 gesture.pendingSkipJob?.cancel()
                 val timeout = state.volumeLongPressMs
                 gesture.pendingSkipJob = serviceScope.launch {
@@ -823,13 +877,6 @@ class BlueLMInterceptorService : AccessibilityService() {
     ): Boolean {
         when (decision) {
             VolumeKeyPolicy.UpDecision.PassThrough -> return false
-            VolumeKeyPolicy.UpDecision.AfterObserve -> {
-                InterceptorStateRepository.diag(
-                    "VOL",
-                    "UP after observe skipFired-clear (native volume)",
-                )
-                return false
-            }
             VolumeKeyPolicy.UpDecision.AfterSkip -> {
                 InterceptorStateRepository.diag("VOL", "UP after skip")
                 return true
@@ -875,6 +922,30 @@ class BlueLMInterceptorService : AccessibilityService() {
     private fun isVolumeKey(keyCode: Int): Boolean =
         keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN
 
+    private fun scheduleImmersiveRefresh(immediate: Boolean) {
+        immersiveRefreshJob?.cancel()
+        immersiveRefreshJob = serviceScope.launch {
+            if (!immediate) delay(120)
+            refreshGestureHandleImmersive()
+        }
+    }
+
+    private fun refreshGestureHandleImmersive() {
+        val controller = gestureHandleController ?: return
+        if (!InterceptorStateRepository.serviceState.value.gestureHandleEnabled) return
+        // Always track immersive truth; hide-pref only gates detach in the controller.
+        val dm = resources.displayMetrics
+        val snaps = GestureImmersiveDetector.snapshotWindows(windows)
+        val immersive = GestureImmersiveDetector.isImmersiveFullscreen(
+            windows = snaps,
+            screenWidthPx = dm.widthPixels,
+            screenHeightPx = dm.heightPixels,
+        )
+        if (lastImmersiveFullscreen == immersive) return
+        lastImmersiveFullscreen = immersive
+        controller.setImmersiveFullscreen(immersive)
+    }
+
     private fun isScreenInteractive(): Boolean {
         val pm = getSystemService(PowerManager::class.java) ?: return true
         return pm.isInteractive
@@ -882,7 +953,13 @@ class BlueLMInterceptorService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
-        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+        val type = event.eventType
+        if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED ||
+            type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+        ) {
+            scheduleImmersiveRefresh(immediate = false)
+        }
+        if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             return
         }
 

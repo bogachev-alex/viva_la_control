@@ -20,6 +20,7 @@ import viva.la.circle.engine.CircleToSearch
 import viva.la.circle.model.VolumeShortAction
 import viva.la.circle.remap.TargetActionFire
 import viva.la.circle.service.InterceptorStateRepository
+import viva.la.circle.ui.GestureHapticSlot
 import viva.la.circle.ui.MainScreen
 import viva.la.circle.ui.theme.Bluelm_interceptorTheme
 import java.text.SimpleDateFormat
@@ -57,6 +58,39 @@ class MainActivity : ComponentActivity() {
                     onGestureHandleOpacityChange = { opacity ->
                         InterceptorStateRepository.setGestureHandleOpacity(this, opacity)
                     },
+                    onGestureHandleHapticChange = { slot, enabled ->
+                        when (slot) {
+                            GestureHapticSlot.TAP ->
+                                InterceptorStateRepository.setGestureHapticTap(this, enabled)
+                            GestureHapticSlot.LONG_PRESS ->
+                                InterceptorStateRepository.setGestureHapticLongPress(this, enabled)
+                            GestureHapticSlot.SWIPE_UP ->
+                                InterceptorStateRepository.setGestureHapticSwipeUp(this, enabled)
+                            GestureHapticSlot.SWIPE_LEFT ->
+                                InterceptorStateRepository.setGestureHapticSwipeLeft(this, enabled)
+                            GestureHapticSlot.SWIPE_RIGHT ->
+                                InterceptorStateRepository.setGestureHapticSwipeRight(this, enabled)
+                            GestureHapticSlot.BACK ->
+                                InterceptorStateRepository.setGestureHapticBack(this, enabled)
+                            GestureHapticSlot.RECENTS ->
+                                InterceptorStateRepository.setGestureHapticRecents(this, enabled)
+                        }
+                    },
+                    onGestureHandleHideInFullscreenChange = { enabled ->
+                        InterceptorStateRepository.setGestureHandleHideInFullscreen(this, enabled)
+                    },
+                    onGesturePillColorChange = { color ->
+                        InterceptorStateRepository.setGesturePillColorArgb(this, color)
+                    },
+                    onGesturePillWidthChange = { width ->
+                        InterceptorStateRepository.setGesturePillWidthDp(this, width)
+                    },
+                    onGesturePillHeightChange = { height ->
+                        InterceptorStateRepository.setGesturePillHeightDp(this, height)
+                    },
+                    onGestureBottomOffsetChange = { offset ->
+                        InterceptorStateRepository.setGestureBottomOffsetDp(this, offset)
+                    },
                     onSelectGestureTapAction = { action, pkg ->
                         InterceptorStateRepository.setGestureTapAction(this, action, pkg)
                     },
@@ -65,6 +99,12 @@ class MainActivity : ComponentActivity() {
                     },
                     onSelectGestureSwipeUpAction = { action, pkg ->
                         InterceptorStateRepository.setGestureSwipeUpAction(this, action, pkg)
+                    },
+                    onSelectGestureSwipeLeftAction = { action, pkg ->
+                        InterceptorStateRepository.setGestureSwipeLeftAction(this, action, pkg)
+                    },
+                    onSelectGestureSwipeRightAction = { action, pkg ->
+                        InterceptorStateRepository.setGestureSwipeRightAction(this, action, pkg)
                     },
                     onVolumeSkipTracksChange = { enabled ->
                         InterceptorStateRepository.setVolumeSkipTracksEnabled(this, enabled)

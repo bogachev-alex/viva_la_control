@@ -2,11 +2,13 @@ package viva.la.circle.service
 
 import android.content.ComponentName
 import android.content.Context
+import android.content.SharedPreferences
 import android.provider.Settings
 import android.text.TextUtils
 import viva.la.circle.engine.OriginOs
 import viva.la.circle.engine.VendorProfile
 import viva.la.circle.gesture.GestureHandleConfig
+import viva.la.circle.gesture.GestureNavEvent
 import viva.la.circle.model.BlueLMActionConfig
 import viva.la.circle.model.TargetAction
 import viva.la.circle.model.VolumeShortAction
@@ -45,17 +47,45 @@ data class InterceptorServiceState(
     val volumeShortRemapEnabled: Boolean = false,
     val volumeLongPressMs: Long = VolumeKeyPolicy.DEFAULT_LONG_PRESS_MS,
     val volumeHapticEnabled: Boolean = true,
+    /** Runtime status: system volume long-press hook is registered (ADB permission granted). */
+    val volumeLongPressListenerActive: Boolean = false,
     val volumeUpShortAction: VolumeShortAction = VolumeShortAction.Volume,
     val volumeDownShortAction: VolumeShortAction = VolumeShortAction.Volume,
     val gestureHandleEnabled: Boolean = false,
     val gestureHandleOpacity: Int = GestureHandleConfig.DEFAULT_OPACITY_PERCENT,
+    val gestureHapticTap: Boolean = true,
+    val gestureHapticLongPress: Boolean = true,
+    val gestureHapticSwipeUp: Boolean = true,
+    val gestureHapticSwipeLeft: Boolean = true,
+    val gestureHapticSwipeRight: Boolean = true,
+    val gestureHapticBack: Boolean = true,
+    val gestureHapticRecents: Boolean = true,
+    val gestureHandleHideInFullscreen: Boolean = true,
+    val gesturePillColorArgb: Int = GestureHandleConfig.DEFAULT_COLOR_ARGB,
+    val gesturePillWidthDp: Int = GestureHandleConfig.DEFAULT_WIDTH_DP,
+    val gesturePillHeightDp: Int = GestureHandleConfig.DEFAULT_HEIGHT_DP,
+    val gestureBottomOffsetDp: Int = GestureHandleConfig.DEFAULT_BOTTOM_OFFSET_DP,
     val gestureTapAction: TargetAction = GestureHandleConfig.DEFAULT_TAP_ACTION,
     val gestureTapSpecificPackage: String? = null,
     val gestureLongPressAction: TargetAction = GestureHandleConfig.DEFAULT_LONG_PRESS_ACTION,
     val gestureLongPressSpecificPackage: String? = null,
     val gestureSwipeUpAction: TargetAction = GestureHandleConfig.DEFAULT_SWIPE_UP_ACTION,
     val gestureSwipeUpSpecificPackage: String? = null,
-)
+    val gestureSwipeLeftAction: TargetAction = GestureHandleConfig.DEFAULT_SWIPE_LEFT_ACTION,
+    val gestureSwipeLeftSpecificPackage: String? = null,
+    val gestureSwipeRightAction: TargetAction = GestureHandleConfig.DEFAULT_SWIPE_RIGHT_ACTION,
+    val gestureSwipeRightSpecificPackage: String? = null,
+) {
+    fun gestureHapticEnabled(event: GestureNavEvent): Boolean = when (event) {
+        GestureNavEvent.Tap -> gestureHapticTap
+        GestureNavEvent.LongPress -> gestureHapticLongPress
+        GestureNavEvent.SwipeUp -> gestureHapticSwipeUp
+        GestureNavEvent.SwipeLeft -> gestureHapticSwipeLeft
+        GestureNavEvent.SwipeRight -> gestureHapticSwipeRight
+        GestureNavEvent.Back -> gestureHapticBack
+        GestureNavEvent.Recents -> gestureHapticRecents
+    }
+}
 
 enum class KeyCaptureTarget { CAMERA }
 
@@ -78,12 +108,30 @@ object InterceptorStateRepository {
     private const val KEY_VOLUME_DOWN_SHORT_PKG = "key_volume_down_short_pkg"
     private const val KEY_GESTURE_HANDLE_ENABLED = "key_gesture_handle_enabled"
     private const val KEY_GESTURE_HANDLE_OPACITY = "key_gesture_handle_opacity"
+    /** Legacy master switch; migrates into per-gesture keys when those are absent. */
+    private const val KEY_GESTURE_HANDLE_HAPTIC = "key_gesture_handle_haptic"
+    private const val KEY_GESTURE_HAPTIC_TAP = "key_gesture_haptic_tap"
+    private const val KEY_GESTURE_HAPTIC_LONG_PRESS = "key_gesture_haptic_long_press"
+    private const val KEY_GESTURE_HAPTIC_SWIPE_UP = "key_gesture_haptic_swipe_up"
+    private const val KEY_GESTURE_HAPTIC_SWIPE_LEFT = "key_gesture_haptic_swipe_left"
+    private const val KEY_GESTURE_HAPTIC_SWIPE_RIGHT = "key_gesture_haptic_swipe_right"
+    private const val KEY_GESTURE_HAPTIC_BACK = "key_gesture_haptic_back"
+    private const val KEY_GESTURE_HAPTIC_RECENTS = "key_gesture_haptic_recents"
+    private const val KEY_GESTURE_HANDLE_HIDE_FULLSCREEN = "key_gesture_handle_hide_fullscreen"
+    private const val KEY_GESTURE_PILL_COLOR = "key_gesture_pill_color"
+    private const val KEY_GESTURE_PILL_WIDTH_DP = "key_gesture_pill_width_dp"
+    private const val KEY_GESTURE_PILL_HEIGHT_DP = "key_gesture_pill_height_dp"
+    private const val KEY_GESTURE_BOTTOM_OFFSET_DP = "key_gesture_bottom_offset_dp"
     private const val KEY_GESTURE_TAP_ACTION = "key_gesture_tap_action"
     private const val KEY_GESTURE_TAP_PKG = "key_gesture_tap_pkg"
     private const val KEY_GESTURE_LONG_PRESS_ACTION = "key_gesture_long_press_action"
     private const val KEY_GESTURE_LONG_PRESS_PKG = "key_gesture_long_press_pkg"
     private const val KEY_GESTURE_SWIPE_UP_ACTION = "key_gesture_swipe_up_action"
     private const val KEY_GESTURE_SWIPE_UP_PKG = "key_gesture_swipe_up_pkg"
+    private const val KEY_GESTURE_SWIPE_LEFT_ACTION = "key_gesture_swipe_left_action"
+    private const val KEY_GESTURE_SWIPE_LEFT_PKG = "key_gesture_swipe_left_pkg"
+    private const val KEY_GESTURE_SWIPE_RIGHT_ACTION = "key_gesture_swipe_right_action"
+    private const val KEY_GESTURE_SWIPE_RIGHT_PKG = "key_gesture_swipe_right_pkg"
     private const val STALE_TEST_PACKAGE = "com.tosharoki.hwcts"
     private const val DIAG_CAP = 200
 
@@ -107,20 +155,11 @@ object InterceptorStateRepository {
             val blueLMSpecificPkg = sanitizeTestPackage(rawBlueLMSpecificPkg)
             val cameraSpecificPkg = sanitizeTestPackage(rawCameraSpecificPkg)
             val blueLMAction = BlueLMActionConfig.decodeStored(blueLMActionStr)
-            val prefsEditor = prefs.edit()
-            var prefsDirty = false
             if (blueLMSpecificPkg != rawBlueLMSpecificPkg || cameraSpecificPkg != rawCameraSpecificPkg) {
-                prefsEditor
+                prefs.edit()
                     .putString(KEY_BLUELM_SPECIFIC_PKG, blueLMSpecificPkg)
                     .putString(KEY_CAMERA_SPECIFIC_PKG, cameraSpecificPkg)
-                prefsDirty = true
-            }
-            if (BlueLMActionConfig.shouldMigrateDefaultAssistant(blueLMActionStr)) {
-                prefsEditor.remove(KEY_BLUELM_ACTION)
-                prefsDirty = true
-            }
-            if (prefsDirty) {
-                prefsEditor.apply()
+                    .apply()
             }
             val profile = VendorProfile.current()
             val detection = OriginOs.detect()
@@ -162,6 +201,57 @@ object InterceptorStateRepository {
                     gestureHandleOpacity = GestureHandleConfig.clampOpacity(
                         prefs.getInt(KEY_GESTURE_HANDLE_OPACITY, GestureHandleConfig.DEFAULT_OPACITY_PERCENT),
                     ),
+                    gestureHapticTap = prefsBoolOr(
+                        prefs,
+                        KEY_GESTURE_HAPTIC_TAP,
+                        prefs.getBoolean(KEY_GESTURE_HANDLE_HAPTIC, true),
+                    ),
+                    gestureHapticLongPress = prefsBoolOr(
+                        prefs,
+                        KEY_GESTURE_HAPTIC_LONG_PRESS,
+                        prefs.getBoolean(KEY_GESTURE_HANDLE_HAPTIC, true),
+                    ),
+                    gestureHapticSwipeUp = prefsBoolOr(
+                        prefs,
+                        KEY_GESTURE_HAPTIC_SWIPE_UP,
+                        prefs.getBoolean(KEY_GESTURE_HANDLE_HAPTIC, true),
+                    ),
+                    gestureHapticSwipeLeft = prefsBoolOr(
+                        prefs,
+                        KEY_GESTURE_HAPTIC_SWIPE_LEFT,
+                        prefs.getBoolean(KEY_GESTURE_HANDLE_HAPTIC, true),
+                    ),
+                    gestureHapticSwipeRight = prefsBoolOr(
+                        prefs,
+                        KEY_GESTURE_HAPTIC_SWIPE_RIGHT,
+                        prefs.getBoolean(KEY_GESTURE_HANDLE_HAPTIC, true),
+                    ),
+                    gestureHapticBack = prefsBoolOr(
+                        prefs,
+                        KEY_GESTURE_HAPTIC_BACK,
+                        prefs.getBoolean(KEY_GESTURE_HANDLE_HAPTIC, true),
+                    ),
+                    gestureHapticRecents = prefsBoolOr(
+                        prefs,
+                        KEY_GESTURE_HAPTIC_RECENTS,
+                        prefs.getBoolean(KEY_GESTURE_HANDLE_HAPTIC, true),
+                    ),
+                    gestureHandleHideInFullscreen = prefs.getBoolean(
+                        KEY_GESTURE_HANDLE_HIDE_FULLSCREEN,
+                        true,
+                    ),
+                    gesturePillColorArgb = GestureHandleConfig.normalizeColorArgb(
+                        prefs.getInt(KEY_GESTURE_PILL_COLOR, GestureHandleConfig.DEFAULT_COLOR_ARGB),
+                    ),
+                    gesturePillWidthDp = GestureHandleConfig.clampWidthDp(
+                        prefs.getInt(KEY_GESTURE_PILL_WIDTH_DP, GestureHandleConfig.DEFAULT_WIDTH_DP),
+                    ),
+                    gesturePillHeightDp = GestureHandleConfig.clampHeightDp(
+                        prefs.getInt(KEY_GESTURE_PILL_HEIGHT_DP, GestureHandleConfig.DEFAULT_HEIGHT_DP),
+                    ),
+                    gestureBottomOffsetDp = GestureHandleConfig.clampBottomOffsetDp(
+                        prefs.getInt(KEY_GESTURE_BOTTOM_OFFSET_DP, GestureHandleConfig.DEFAULT_BOTTOM_OFFSET_DP),
+                    ),
                     gestureTapAction = TargetAction.fromName(
                         prefs.getString(KEY_GESTURE_TAP_ACTION, null),
                         GestureHandleConfig.DEFAULT_TAP_ACTION,
@@ -177,6 +267,20 @@ object InterceptorStateRepository {
                         GestureHandleConfig.DEFAULT_SWIPE_UP_ACTION,
                     ),
                     gestureSwipeUpSpecificPackage = sanitizeTestPackage(prefs.getString(KEY_GESTURE_SWIPE_UP_PKG, null)),
+                    gestureSwipeLeftAction = TargetAction.fromName(
+                        prefs.getString(KEY_GESTURE_SWIPE_LEFT_ACTION, null),
+                        GestureHandleConfig.DEFAULT_SWIPE_LEFT_ACTION,
+                    ),
+                    gestureSwipeLeftSpecificPackage = sanitizeTestPackage(
+                        prefs.getString(KEY_GESTURE_SWIPE_LEFT_PKG, null),
+                    ),
+                    gestureSwipeRightAction = TargetAction.fromName(
+                        prefs.getString(KEY_GESTURE_SWIPE_RIGHT_ACTION, null),
+                        GestureHandleConfig.DEFAULT_SWIPE_RIGHT_ACTION,
+                    ),
+                    gestureSwipeRightSpecificPackage = sanitizeTestPackage(
+                        prefs.getString(KEY_GESTURE_SWIPE_RIGHT_PKG, null),
+                    ),
                 )
             }
         } catch (_: Exception) {
@@ -192,6 +296,10 @@ object InterceptorStateRepository {
     fun setVolumeShortRemapEnabled(context: Context? = null, enabled: Boolean) {
         _serviceState.update { it.copy(volumeShortRemapEnabled = enabled) }
         persistBoolean(context, KEY_VOLUME_SHORT_REMAP, enabled)
+    }
+
+    fun setVolumeLongPressListenerActive(active: Boolean) {
+        _serviceState.update { it.copy(volumeLongPressListenerActive = active) }
     }
 
     fun setVolumeLongPressMs(context: Context? = null, timeoutMs: Long) {
@@ -249,12 +357,81 @@ object InterceptorStateRepository {
     fun setGestureHandleOpacity(context: Context? = null, opacityPercent: Int) {
         val clamped = GestureHandleConfig.clampOpacity(opacityPercent)
         _serviceState.update { it.copy(gestureHandleOpacity = clamped) }
-        if (context != null) {
-            try {
-                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                    .edit().putInt(KEY_GESTURE_HANDLE_OPACITY, clamped).apply()
-            } catch (_: Exception) {
-            }
+        persistInt(context, KEY_GESTURE_HANDLE_OPACITY, clamped)
+    }
+
+    fun setGestureHapticTap(context: Context? = null, enabled: Boolean) {
+        _serviceState.update { it.copy(gestureHapticTap = enabled) }
+        persistBoolean(context, KEY_GESTURE_HAPTIC_TAP, enabled)
+    }
+
+    fun setGestureHapticLongPress(context: Context? = null, enabled: Boolean) {
+        _serviceState.update { it.copy(gestureHapticLongPress = enabled) }
+        persistBoolean(context, KEY_GESTURE_HAPTIC_LONG_PRESS, enabled)
+    }
+
+    fun setGestureHapticSwipeUp(context: Context? = null, enabled: Boolean) {
+        _serviceState.update { it.copy(gestureHapticSwipeUp = enabled) }
+        persistBoolean(context, KEY_GESTURE_HAPTIC_SWIPE_UP, enabled)
+    }
+
+    fun setGestureHapticSwipeLeft(context: Context? = null, enabled: Boolean) {
+        _serviceState.update { it.copy(gestureHapticSwipeLeft = enabled) }
+        persistBoolean(context, KEY_GESTURE_HAPTIC_SWIPE_LEFT, enabled)
+    }
+
+    fun setGestureHapticSwipeRight(context: Context? = null, enabled: Boolean) {
+        _serviceState.update { it.copy(gestureHapticSwipeRight = enabled) }
+        persistBoolean(context, KEY_GESTURE_HAPTIC_SWIPE_RIGHT, enabled)
+    }
+
+    fun setGestureHapticBack(context: Context? = null, enabled: Boolean) {
+        _serviceState.update { it.copy(gestureHapticBack = enabled) }
+        persistBoolean(context, KEY_GESTURE_HAPTIC_BACK, enabled)
+    }
+
+    fun setGestureHapticRecents(context: Context? = null, enabled: Boolean) {
+        _serviceState.update { it.copy(gestureHapticRecents = enabled) }
+        persistBoolean(context, KEY_GESTURE_HAPTIC_RECENTS, enabled)
+    }
+
+    fun setGestureHandleHideInFullscreen(context: Context? = null, enabled: Boolean) {
+        _serviceState.update { it.copy(gestureHandleHideInFullscreen = enabled) }
+        persistBoolean(context, KEY_GESTURE_HANDLE_HIDE_FULLSCREEN, enabled)
+    }
+
+    fun setGesturePillColorArgb(context: Context? = null, colorArgb: Int) {
+        val normalized = GestureHandleConfig.normalizeColorArgb(colorArgb)
+        _serviceState.update { it.copy(gesturePillColorArgb = normalized) }
+        persistInt(context, KEY_GESTURE_PILL_COLOR, normalized)
+    }
+
+    fun setGesturePillWidthDp(context: Context? = null, widthDp: Int) {
+        val clamped = GestureHandleConfig.clampWidthDp(widthDp)
+        _serviceState.update { it.copy(gesturePillWidthDp = clamped) }
+        persistInt(context, KEY_GESTURE_PILL_WIDTH_DP, clamped)
+    }
+
+    fun setGesturePillHeightDp(context: Context? = null, heightDp: Int) {
+        val clamped = GestureHandleConfig.clampHeightDp(heightDp)
+        _serviceState.update { it.copy(gesturePillHeightDp = clamped) }
+        persistInt(context, KEY_GESTURE_PILL_HEIGHT_DP, clamped)
+    }
+
+    fun setGestureBottomOffsetDp(context: Context? = null, offsetDp: Int) {
+        val clamped = GestureHandleConfig.clampBottomOffsetDp(offsetDp)
+        _serviceState.update { it.copy(gestureBottomOffsetDp = clamped) }
+        persistInt(context, KEY_GESTURE_BOTTOM_OFFSET_DP, clamped)
+    }
+
+    private fun persistInt(context: Context?, key: String, value: Int) {
+        if (context == null) return
+        try {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putInt(key, value)
+                .apply()
+        } catch (_: Exception) {
         }
     }
 
@@ -271,6 +448,32 @@ object InterceptorStateRepository {
     fun setGestureSwipeUpAction(context: Context? = null, action: TargetAction, specificPackage: String? = null) {
         _serviceState.update { it.copy(gestureSwipeUpAction = action, gestureSwipeUpSpecificPackage = specificPackage) }
         persistGestureSlot(context, KEY_GESTURE_SWIPE_UP_ACTION, KEY_GESTURE_SWIPE_UP_PKG, action, specificPackage)
+    }
+
+    fun setGestureSwipeLeftAction(context: Context? = null, action: TargetAction, specificPackage: String? = null) {
+        _serviceState.update {
+            it.copy(gestureSwipeLeftAction = action, gestureSwipeLeftSpecificPackage = specificPackage)
+        }
+        persistGestureSlot(
+            context,
+            KEY_GESTURE_SWIPE_LEFT_ACTION,
+            KEY_GESTURE_SWIPE_LEFT_PKG,
+            action,
+            specificPackage,
+        )
+    }
+
+    fun setGestureSwipeRightAction(context: Context? = null, action: TargetAction, specificPackage: String? = null) {
+        _serviceState.update {
+            it.copy(gestureSwipeRightAction = action, gestureSwipeRightSpecificPackage = specificPackage)
+        }
+        persistGestureSlot(
+            context,
+            KEY_GESTURE_SWIPE_RIGHT_ACTION,
+            KEY_GESTURE_SWIPE_RIGHT_PKG,
+            action,
+            specificPackage,
+        )
     }
 
     private fun persistGestureSlot(
@@ -483,6 +686,9 @@ object InterceptorStateRepository {
         } catch (_: Exception) {
         }
     }
+
+    private fun prefsBoolOr(prefs: SharedPreferences, key: String, fallback: Boolean): Boolean =
+        if (prefs.contains(key)) prefs.getBoolean(key, fallback) else fallback
 
     private fun publishDiagSnapshot() {
         synchronized(diagLock) {

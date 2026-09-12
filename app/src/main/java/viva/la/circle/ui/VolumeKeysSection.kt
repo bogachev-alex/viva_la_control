@@ -31,8 +31,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -104,6 +107,10 @@ fun VolumeKeysCard(
                 checked = state.volumeSkipTracksEnabled,
                 onCheckedChange = onSkipTracksChange,
             )
+
+            if (state.volumeSkipTracksEnabled) {
+                VolumeLongPressAdbCard(active = state.volumeLongPressListenerActive)
+            }
 
             PreferenceSwitchRow(
                 title = stringResource(R.string.volume_short_remap),
@@ -350,6 +357,63 @@ private fun VolumeShortOptionRow(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun VolumeLongPressAdbCard(active: Boolean) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val command =
+        "adb shell pm grant ${context.packageName} " +
+            "android.permission.SET_VOLUME_KEY_LONG_PRESS_LISTENER"
+
+    OutlinedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (active) {
+                Text(
+                    text = stringResource(R.string.volume_syslongpress_active),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                return@Column
+            }
+            Text(
+                text = stringResource(R.string.volume_syslongpress_title),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = stringResource(R.string.volume_syslongpress_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = command,
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            OutlinedButton(
+                onClick = {
+                    clipboard.setText(AnnotatedString(command))
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.volume_syslongpress_copied),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                },
+            ) {
+                Text(text = stringResource(R.string.volume_syslongpress_copy))
             }
         }
     }

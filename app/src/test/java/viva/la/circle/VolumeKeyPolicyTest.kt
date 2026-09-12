@@ -72,47 +72,61 @@ class VolumeKeyPolicyTest {
     }
 
     @Test
-    fun downObservesSkipWhenPassThroughVolume() {
+    fun downFirstNativeVolumeTapArmsDouble() {
         assertEquals(
-            VolumeKeyPolicy.DownDecision.ObserveStartSkipJob,
+            VolumeKeyPolicy.DownDecision.PassThroughArmDouble,
             VolumeKeyPolicy.onDown(
                 armed = true,
                 canSkip = true,
                 passThroughVolume = true,
                 repeatCount = 0,
                 alreadyConsuming = false,
-                alreadyObserving = false,
+                secondTapWithinWindow = false,
             ),
         )
     }
 
     @Test
-    fun downPassThroughRepeatsWhileObservingVolume() {
+    fun downSecondNativeVolumeTapFiresSkip() {
+        assertEquals(
+            VolumeKeyPolicy.DownDecision.ConsumeFireSkip,
+            VolumeKeyPolicy.onDown(
+                armed = true,
+                canSkip = true,
+                passThroughVolume = true,
+                repeatCount = 0,
+                alreadyConsuming = false,
+                secondTapWithinWindow = true,
+            ),
+        )
+    }
+
+    @Test
+    fun downNativeVolumeHoldPassesThrough() {
         assertEquals(
             VolumeKeyPolicy.DownDecision.PassThrough,
             VolumeKeyPolicy.onDown(
                 armed = true,
                 canSkip = true,
                 passThroughVolume = true,
-                repeatCount = 1,
+                repeatCount = 3,
                 alreadyConsuming = false,
-                alreadyObserving = true,
+                secondTapWithinWindow = false,
             ),
         )
     }
 
     @Test
-    fun downSwallowsRepeatsAfterObserveSkip() {
+    fun downNativeVolumeNoSkipWhenNoMedia() {
         assertEquals(
-            VolumeKeyPolicy.DownDecision.SwallowAfterSkip,
+            VolumeKeyPolicy.DownDecision.PassThrough,
             VolumeKeyPolicy.onDown(
                 armed = true,
-                canSkip = true,
+                canSkip = false,
                 passThroughVolume = true,
-                repeatCount = 3,
+                repeatCount = 0,
                 alreadyConsuming = false,
-                alreadyObserving = true,
-                skipFired = true,
+                secondTapWithinWindow = true,
             ),
         )
     }
@@ -127,13 +141,13 @@ class VolumeKeyPolicyTest {
                 passThroughVolume = false,
                 repeatCount = 0,
                 alreadyConsuming = false,
-                alreadyObserving = false,
+                secondTapWithinWindow = false,
             ),
         )
     }
 
     @Test
-    fun downShortOnlyWhenArmedWithoutSkip() {
+    fun downShortOnlyWhenRemapArmedWithoutSkip() {
         assertEquals(
             VolumeKeyPolicy.DownDecision.ConsumeShortOnly,
             VolumeKeyPolicy.onDown(
@@ -142,7 +156,22 @@ class VolumeKeyPolicyTest {
                 passThroughVolume = false,
                 repeatCount = 0,
                 alreadyConsuming = false,
-                alreadyObserving = false,
+                secondTapWithinWindow = false,
+            ),
+        )
+    }
+
+    @Test
+    fun downContinuesConsumingRemapRepeats() {
+        assertEquals(
+            VolumeKeyPolicy.DownDecision.ContinueConsuming,
+            VolumeKeyPolicy.onDown(
+                armed = true,
+                canSkip = true,
+                passThroughVolume = false,
+                repeatCount = 2,
+                alreadyConsuming = true,
+                secondTapWithinWindow = false,
             ),
         )
     }
@@ -153,22 +182,8 @@ class VolumeKeyPolicyTest {
             VolumeKeyPolicy.UpDecision.AfterSkip,
             VolumeKeyPolicy.onUp(
                 wasConsuming = true,
-                wasObserving = false,
                 skipFired = true,
                 shortAction = VolumeShortAction.Remap(TargetAction.FLASHLIGHT),
-            ),
-        )
-    }
-
-    @Test
-    fun upAfterObserveAlwaysPass() {
-        assertEquals(
-            VolumeKeyPolicy.UpDecision.AfterObserve,
-            VolumeKeyPolicy.onUp(
-                wasConsuming = false,
-                wasObserving = true,
-                skipFired = true,
-                shortAction = VolumeShortAction.Volume,
             ),
         )
     }
@@ -179,7 +194,6 @@ class VolumeKeyPolicyTest {
             VolumeKeyPolicy.UpDecision.FireAction(TargetAction.SCREENSHOT, null),
             VolumeKeyPolicy.onUp(
                 wasConsuming = true,
-                wasObserving = false,
                 skipFired = false,
                 shortAction = VolumeShortAction.Remap(TargetAction.SCREENSHOT),
             ),

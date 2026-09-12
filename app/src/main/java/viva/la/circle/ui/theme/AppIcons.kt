@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 
@@ -1400,4 +1401,50 @@ object AppIcons {
 
     private var _warning: ImageVector? = null
 
+
+    // Icons below are built from raw SVG path data (same Material rounded set).
+    private fun fromPathData(name: String, vararg pathData: String, autoMirror: Boolean = false): ImageVector =
+        ImageVector.Builder(
+            name = "AppIcons.$name",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f,
+            autoMirror = autoMirror,
+        ).apply {
+            pathData.forEach { data ->
+                addPath(
+                    pathData = addPathNodes(data),
+                    fill = SolidColor(Color.Black),
+                    pathFillType = PathFillType.NonZero,
+                )
+            }
+        }.build()
+
+    val ArrowBack: ImageVector
+        get() = _arrowBack ?: fromPathData(
+            "ArrowBack",
+            "M19 11H7.83l4.88-4.88c.39-.39.39-1.03 0-1.42a.996.996 0 0 0-1.41 0l-6.59 6.59a.996.996 0 0 0 0 1.41l6.59 6.59a.996.996 0 1 0 1.41-1.41L7.83 13H19c.55 0 1-.45 1-1s-.45-1-1-1z",
+            autoMirror = true,
+        ).also { _arrowBack = it }
+
+    private var _arrowBack: ImageVector? = null
+
+    val ChevronRight: ImageVector
+        get() = _chevronRight ?: fromPathData(
+            "ChevronRight",
+            "M9.29 6.71a.996.996 0 0 0 0 1.41L13.17 12l-3.88 3.88a.996.996 0 1 0 1.41 1.41l4.59-4.59a.996.996 0 0 0 0-1.41L10.7 6.7c-.38-.38-1.02-.38-1.41.01z",
+            autoMirror = true,
+        ).also { _chevronRight = it }
+
+    private var _chevronRight: ImageVector? = null
+
+    val PhotoCamera: ImageVector
+        get() = _photoCamera ?: fromPathData(
+            "PhotoCamera",
+            "M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z",
+            "M9 2 7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z",
+        ).also { _photoCamera = it }
+
+    private var _photoCamera: ImageVector? = null
 }

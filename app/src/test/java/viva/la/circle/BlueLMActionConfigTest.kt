@@ -18,15 +18,8 @@ class BlueLMActionConfigTest {
     }
 
     @Test
-    fun decodeStored_defaultAssistant_migratesToUnset() {
-        assertNull(BlueLMActionConfig.decodeStored(TargetAction.DEFAULT_ASSISTANT.name))
-        assertTrue(BlueLMActionConfig.shouldMigrateDefaultAssistant(TargetAction.DEFAULT_ASSISTANT.name))
-        assertFalse(BlueLMActionConfig.shouldMigrateDefaultAssistant(TargetAction.FLASHLIGHT.name))
-        assertFalse(BlueLMActionConfig.shouldMigrateDefaultAssistant(null))
-    }
-
-    @Test
-    fun decodeStored_keepsExplicitActionsIncludingNone() {
+    fun decodeStored_keepsExplicitActionsIncludingDefaultAssistant() {
+        assertEquals(TargetAction.DEFAULT_ASSISTANT, BlueLMActionConfig.decodeStored("DEFAULT_ASSISTANT"))
         assertEquals(TargetAction.NONE, BlueLMActionConfig.decodeStored("NONE"))
         assertEquals(TargetAction.FLASHLIGHT, BlueLMActionConfig.decodeStored("FLASHLIGHT"))
         assertEquals(TargetAction.CIRCLE_TO_SEARCH, BlueLMActionConfig.decodeStored("CIRCLE_TO_SEARCH"))
@@ -37,6 +30,7 @@ class BlueLMActionConfigTest {
     fun configuredAndRemapGates() {
         assertFalse(BlueLMActionConfig.isConfigured(null))
         assertTrue(BlueLMActionConfig.isConfigured(TargetAction.NONE))
+        assertTrue(BlueLMActionConfig.isConfigured(TargetAction.DEFAULT_ASSISTANT))
         assertTrue(BlueLMActionConfig.isConfigured(TargetAction.FLASHLIGHT))
 
         assertFalse(BlueLMActionConfig.shouldRemap(null))

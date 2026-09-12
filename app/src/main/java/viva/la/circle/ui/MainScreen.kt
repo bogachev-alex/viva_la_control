@@ -2,6 +2,7 @@ package viva.la.circle.ui
 
 import android.content.Intent
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,7 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -42,7 +43,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -50,6 +53,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -100,9 +104,17 @@ fun MainScreen(
     onSkipCameraAppChange: (Boolean) -> Unit = {},
     onGestureHandleEnabledChange: (Boolean) -> Unit = {},
     onGestureHandleOpacityChange: (Int) -> Unit = {},
+    onGestureHandleHapticChange: (GestureHapticSlot, Boolean) -> Unit = { _, _ -> },
+    onGestureHandleHideInFullscreenChange: (Boolean) -> Unit = {},
+    onGesturePillColorChange: (Int) -> Unit = {},
+    onGesturePillWidthChange: (Int) -> Unit = {},
+    onGesturePillHeightChange: (Int) -> Unit = {},
+    onGestureBottomOffsetChange: (Int) -> Unit = {},
     onSelectGestureTapAction: (TargetAction, String?) -> Unit = { _, _ -> },
     onSelectGestureLongPressAction: (TargetAction, String?) -> Unit = { _, _ -> },
     onSelectGestureSwipeUpAction: (TargetAction, String?) -> Unit = { _, _ -> },
+    onSelectGestureSwipeLeftAction: (TargetAction, String?) -> Unit = { _, _ -> },
+    onSelectGestureSwipeRightAction: (TargetAction, String?) -> Unit = { _, _ -> },
     onVolumeSkipTracksChange: (Boolean) -> Unit = {},
     onVolumeShortRemapChange: (Boolean) -> Unit = {},
     onVolumeLongPressMsChange: (Long) -> Unit = {},
@@ -118,41 +130,30 @@ fun MainScreen(
     onAcknowledgeHuaweiAppLaunch: () -> Unit = {},
     diagEvents: List<DiagEvent> = emptyList(),
 ) {
-    val scrollState = rememberScrollState()
+    var section by rememberSaveable { mutableStateOf<SettingsSection?>(null) }
     var showAppPickerForBlueLM by remember { mutableStateOf(false) }
     var showAppPickerForCamera by remember { mutableStateOf(false) }
     var showAppPickerForGesture by remember { mutableStateOf<GestureHandleSlot?>(null) }
     var showAppPickerForVolumeUp by remember { mutableStateOf(false) }
     var showAppPickerForVolumeDown by remember { mutableStateOf(false) }
-    var advancedExpanded by remember { mutableStateOf(false) }
-    var testAttempted by remember { mutableStateOf(false) }
     val blueLMConfigured = BlueLMActionConfig.isConfigured(state.blueLMAction)
+
+    // System back leaves a section and returns to the menu instead of closing the app.
+    BackHandler(enabled = section != null) { section = null }
+    // Each screen starts at the top; a scroll offset from the menu must not carry into a section.
+    val scrollState = remember(section) { ScrollState(initial = 0) }
 
     Scaffold(
         topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
-                        Icon(
-                            imageVector = AppIcons.Shield,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(end = 8.dp),
-                        )
-                        Text(
-                            text = stringResource(R.string.app_name),
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
-            )
+            val current = section
+            if (current == null) {
+                HomeTopBar()
+            } else {
+                SectionTopBar(
+                    title = stringResource(current.titleRes),
+                    onBack = { section = null },
+                )
+            }
         },
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
@@ -165,79 +166,104 @@ fun MainScreen(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            StatusBannerCard(
-                state = state,
-                onOpenSettingsClick = onOpenSettingsClick,
-            )
+            when (section) {
+                null -> {
+                    StatusBannerCard(
+                        state = state,
+                        onOpenSettingsClick = onOpenSettingsClick,
+                    )
 
-            if (HuaweiPowerManagement.isHuaweiDevice() &&
-                RemapConfig.needsHuaweiAppLaunchCard(
-                    isHuaweiDevice = true,
-                    acknowledged = state.huaweiAppLaunchAcknowledged,
-                )
-            ) {
-                HuaweiBatteryWhitelistCard(onAlreadyConfigured = onAcknowledgeHuaweiAppLaunch)
-            }
-
-            SetupChecklistCard(
-                a11yEnabled = state.isEnabledInSettings,
-                actionConfigured = blueLMConfigured,
-                testDone = testAttempted && blueLMConfigured,
-            )
-
-            BlueLMActionCard(
-                state = state,
-                onSelectBlueLMAction = onSelectBlueLMAction,
-                onOpenAppPickerForBlueLM = { showAppPickerForBlueLM = true },
-                onTestSelectedAction = {
-                    if (blueLMConfigured) {
-                        testAttempted = true
-                        onTestAssistantClick()
+                    if (HuaweiPowerManagement.isHuaweiDevice() &&
+                        RemapConfig.needsHuaweiAppLaunchCard(
+                            isHuaweiDevice = true,
+                            acknowledged = state.huaweiAppLaunchAcknowledged,
+                        )
+                    ) {
+                        HuaweiBatteryWhitelistCard(onAlreadyConfigured = onAcknowledgeHuaweiAppLaunch)
                     }
-                },
-                testEnabled = blueLMConfigured,
-            )
 
-            GestureHandleCard(
-                state = state,
-                onEnabledChange = onGestureHandleEnabledChange,
-                onOpacityChange = onGestureHandleOpacityChange,
-                onSelectTapAction = onSelectGestureTapAction,
-                onSelectLongPressAction = onSelectGestureLongPressAction,
-                onSelectSwipeUpAction = onSelectGestureSwipeUpAction,
-                onOpenAppPicker = { slot -> showAppPickerForGesture = slot },
-            )
+                    Text(
+                        text = stringResource(R.string.menu_sections_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
 
-            VolumeKeysCard(
-                state = state,
-                onSkipTracksChange = onVolumeSkipTracksChange,
-                onShortRemapChange = onVolumeShortRemapChange,
-                onLongPressMsChange = onVolumeLongPressMsChange,
-                onHapticChange = onVolumeHapticChange,
-                onVolumeUpShortChange = onVolumeUpShortChange,
-                onVolumeDownShortChange = onVolumeDownShortChange,
-                onOpenAppPickerForVolumeUp = { showAppPickerForVolumeUp = true },
-                onOpenAppPickerForVolumeDown = { showAppPickerForVolumeDown = true },
-            )
+                    SettingsMenuCard(
+                        state = state,
+                        onOpenSection = { section = it },
+                    )
+                }
 
-            AdvancedSection(
-                expanded = advancedExpanded,
-                onToggle = { advancedExpanded = !advancedExpanded },
-                state = state,
-                diagEvents = diagEvents,
-                onSelectCameraAction = onSelectCameraAction,
-                onOpenAppPickerForCamera = { showAppPickerForCamera = true },
-                onSkipCameraAppChange = onSkipCameraAppChange,
-                onCaptureModeChange = onCaptureModeChange,
-                onRemoveCapturedKey = onRemoveCapturedKey,
-                onDiagnosticsEnabledChange = onDiagnosticsEnabledChange,
-                onUseCapturedKey = onUseCapturedKey,
-                onCopyDiagnostics = onCopyDiagnostics,
-                onClearDiagnostics = onClearDiagnostics,
-                onSelectAsTargetApp = { pkgName ->
-                    onSelectBlueLMAction(TargetAction.SPECIFIC_APP, pkgName)
-                },
-            )
+                SettingsSection.BLUELM -> BlueLMActionCard(
+                    state = state,
+                    onSelectBlueLMAction = onSelectBlueLMAction,
+                    onOpenAppPickerForBlueLM = { showAppPickerForBlueLM = true },
+                    onTestSelectedAction = {
+                        if (blueLMConfigured) onTestAssistantClick()
+                    },
+                    testEnabled = blueLMConfigured,
+                )
+
+                SettingsSection.CAMERA -> CameraActionCard(
+                    state = state,
+                    onSelectCameraAction = onSelectCameraAction,
+                    onOpenAppPickerForCamera = { showAppPickerForCamera = true },
+                    onSkipCameraAppChange = onSkipCameraAppChange,
+                    onCaptureModeChange = onCaptureModeChange,
+                    onRemoveCapturedKey = onRemoveCapturedKey,
+                )
+
+                SettingsSection.GESTURE_HANDLE -> GestureHandleCard(
+                    state = state,
+                    onEnabledChange = onGestureHandleEnabledChange,
+                    onOpacityChange = onGestureHandleOpacityChange,
+                    onColorChange = onGesturePillColorChange,
+                    onHapticChange = onGestureHandleHapticChange,
+                    onHideInFullscreenChange = onGestureHandleHideInFullscreenChange,
+                    onWidthChange = onGesturePillWidthChange,
+                    onHeightChange = onGesturePillHeightChange,
+                    onBottomOffsetChange = onGestureBottomOffsetChange,
+                    onSelectTapAction = onSelectGestureTapAction,
+                    onSelectLongPressAction = onSelectGestureLongPressAction,
+                    onSelectSwipeUpAction = onSelectGestureSwipeUpAction,
+                    onSelectSwipeLeftAction = onSelectGestureSwipeLeftAction,
+                    onSelectSwipeRightAction = onSelectGestureSwipeRightAction,
+                    onOpenAppPicker = { slot -> showAppPickerForGesture = slot },
+                )
+
+                SettingsSection.VOLUME_KEYS -> VolumeKeysCard(
+                    state = state,
+                    onSkipTracksChange = onVolumeSkipTracksChange,
+                    onShortRemapChange = onVolumeShortRemapChange,
+                    onLongPressMsChange = onVolumeLongPressMsChange,
+                    onHapticChange = onVolumeHapticChange,
+                    onVolumeUpShortChange = onVolumeUpShortChange,
+                    onVolumeDownShortChange = onVolumeDownShortChange,
+                    onOpenAppPickerForVolumeUp = { showAppPickerForVolumeUp = true },
+                    onOpenAppPickerForVolumeDown = { showAppPickerForVolumeDown = true },
+                )
+
+                SettingsSection.ASSISTANTS -> InstalledAssistantsCard(
+                    onSelectAsTargetApp = { pkgName ->
+                        onSelectBlueLMAction(TargetAction.SPECIFIC_APP, pkgName)
+                    },
+                )
+
+                SettingsSection.DIAGNOSTICS -> {
+                    DiagnosticsCard(
+                        state = state,
+                        events = diagEvents,
+                        onDiagnosticsEnabledChange = onDiagnosticsEnabledChange,
+                        onCaptureModeChange = onCaptureModeChange,
+                        onUseCapturedKey = onUseCapturedKey,
+                        onCopyDiagnostics = onCopyDiagnostics,
+                        onClearDiagnostics = onClearDiagnostics,
+                    )
+                    StatisticsCard(state = state)
+                }
+
+                SettingsSection.HELP -> OnboardingSection()
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
         }
@@ -273,6 +299,10 @@ fun MainScreen(
                             onSelectGestureLongPressAction(TargetAction.SPECIFIC_APP, app.packageName)
                         GestureHandleSlot.SWIPE_UP ->
                             onSelectGestureSwipeUpAction(TargetAction.SPECIFIC_APP, app.packageName)
+                        GestureHandleSlot.SWIPE_LEFT ->
+                            onSelectGestureSwipeLeftAction(TargetAction.SPECIFIC_APP, app.packageName)
+                        GestureHandleSlot.SWIPE_RIGHT ->
+                            onSelectGestureSwipeRightAction(TargetAction.SPECIFIC_APP, app.packageName)
                     }
                     showAppPickerForGesture = null
                 },
@@ -305,78 +335,60 @@ fun MainScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SetupChecklistCard(
-    a11yEnabled: Boolean,
-    actionConfigured: Boolean,
-    testDone: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    ElevatedCard(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.elevatedCardColors(
+private fun HomeTopBar() {
+    CenterAlignedTopAppBar(
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                Icon(
+                    imageVector = AppIcons.Shield,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(end = 8.dp),
+                )
+                Text(
+                    text = stringResource(R.string.app_name),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        },
+        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
             containerColor = MaterialTheme.colorScheme.surface,
         ),
-        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp),
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.setup_checklist_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-            )
-            ChecklistRow(
-                done = a11yEnabled,
-                label = stringResource(R.string.setup_step_enable_a11y),
-            )
-            ChecklistRow(
-                done = actionConfigured,
-                label = stringResource(R.string.setup_step_pick_action),
-            )
-            ChecklistRow(
-                done = testDone,
-                label = stringResource(R.string.setup_step_test),
-            )
-        }
-    }
+    )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ChecklistRow(
-    done: Boolean,
-    label: String,
+private fun SectionTopBar(
+    title: String,
+    onBack: () -> Unit,
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Icon(
-            imageVector = if (done) AppIcons.CheckCircle else AppIcons.Warning,
-            contentDescription = null,
-            tint = if (done) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
-            modifier = Modifier.size(22.dp),
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = if (done) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (done) {
-                MaterialTheme.colorScheme.onSurface
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
-        )
-    }
+    TopAppBar(
+        title = {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+            )
+        },
+        navigationIcon = {
+            IconButton(onClick = onBack) {
+                Icon(
+                    imageVector = AppIcons.ArrowBack,
+                    contentDescription = stringResource(R.string.back),
+                )
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+        ),
+    )
 }
 
 @Composable
@@ -579,71 +591,6 @@ fun BlueLMActionCard(
                     fontWeight = FontWeight.SemiBold,
                 )
             }
-        }
-    }
-}
-
-@Composable
-fun AdvancedSection(
-    expanded: Boolean,
-    onToggle: () -> Unit,
-    state: InterceptorServiceState,
-    diagEvents: List<DiagEvent>,
-    onSelectCameraAction: (TargetAction, String?) -> Unit,
-    onOpenAppPickerForCamera: () -> Unit,
-    onSkipCameraAppChange: (Boolean) -> Unit,
-    onCaptureModeChange: (Boolean) -> Unit,
-    onRemoveCapturedKey: (Int) -> Unit,
-    onDiagnosticsEnabledChange: (Boolean) -> Unit,
-    onUseCapturedKey: (Int) -> Unit,
-    onCopyDiagnostics: () -> Unit,
-    onClearDiagnostics: () -> Unit,
-    onSelectAsTargetApp: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        OutlinedButton(
-            onClick = onToggle,
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(
-                text = stringResource(
-                    if (expanded) R.string.advanced_hide else R.string.advanced_show,
-                ),
-                fontWeight = FontWeight.SemiBold,
-            )
-        }
-
-        if (expanded) {
-            Text(
-                text = stringResource(R.string.advanced_settings),
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            CameraActionCard(
-                state = state,
-                onSelectCameraAction = onSelectCameraAction,
-                onOpenAppPickerForCamera = onOpenAppPickerForCamera,
-                onSkipCameraAppChange = onSkipCameraAppChange,
-                onCaptureModeChange = onCaptureModeChange,
-                onRemoveCapturedKey = onRemoveCapturedKey,
-            )
-            DiagnosticsCard(
-                state = state,
-                events = diagEvents,
-                onDiagnosticsEnabledChange = onDiagnosticsEnabledChange,
-                onCaptureModeChange = onCaptureModeChange,
-                onUseCapturedKey = onUseCapturedKey,
-                onCopyDiagnostics = onCopyDiagnostics,
-                onClearDiagnostics = onClearDiagnostics,
-            )
-            InstalledAssistantsCard(onSelectAsTargetApp = onSelectAsTargetApp)
-            StatisticsCard(state = state)
-            OnboardingSection()
         }
     }
 }
@@ -1375,6 +1322,7 @@ fun getActionIcon(action: TargetAction): ImageVector {
         TargetAction.SCREENSHOT -> AppIcons.Screenshot
         TargetAction.MUTE_TOGGLE -> AppIcons.VolumeOff
         TargetAction.HOME -> AppIcons.Launch
+        TargetAction.BACK -> AppIcons.ArrowBack
     }
 }
 
@@ -1991,6 +1939,7 @@ fun WillLaunchSummary(action: TargetAction?, specificPackage: String?) {
         RemapConfig.FirePreview.Screenshot -> stringResource(R.string.will_launch_screenshot)
         RemapConfig.FirePreview.Mute -> stringResource(R.string.will_launch_mute)
         RemapConfig.FirePreview.Home -> stringResource(R.string.will_launch_home)
+        RemapConfig.FirePreview.Back -> stringResource(R.string.will_launch_back)
     }
 
     if (summary == null) {

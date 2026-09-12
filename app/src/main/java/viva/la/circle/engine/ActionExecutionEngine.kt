@@ -243,6 +243,20 @@ object ActionExecutionEngine {
                     false
                 }
             }
+
+            TargetAction.BACK -> {
+                if (service != null) {
+                    service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                    true
+                } else {
+                    Toast.makeText(
+                        context,
+                        "Back action requires Accessibility Service",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    false
+                }
+            }
         }
     }
 

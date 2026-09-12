@@ -1,25 +1,31 @@
 package viva.la.circle.gesture
 
 import android.accessibilityservice.AccessibilityService
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.RectF
+import android.graphics.Region
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewTreeObserver
 import android.view.WindowManager
 import android.view.WindowManager.LayoutParams
+import android.view.animation.DecelerateInterpolator
 import viva.la.circle.service.InterceptorServiceState
 import viva.la.circle.service.InterceptorStateRepository
 
+private enum class PillFollowAxis { LEFT_RIGHT, UP }
+
 /**
- * App-drawn Gesture Handle: bottom pill + edge Back strips via TYPE_ACCESSIBILITY_OVERLAY.
+ * App-drawn Gesture Handle: compact pill hit-target + short edge Back strips.
  */
 class GestureHandleController(
     private val service: AccessibilityService,
@@ -32,18 +38,59 @@ class GestureHandleController(
     private var bottomView: BottomHandleView? = null
     private var leftEdge: EdgeStripView? = null
     private var rightEdge: EdgeStripView? = null
+    private var bottomParams: LayoutParams? = null
+    private var leftParams: LayoutParams? = null
+    private var rightParams: LayoutParams? = null
     private var attached = false
+
     private var opacityPercent = GestureHandleConfig.DEFAULT_OPACITY_PERCENT
+    private var pillColorArgb = GestureHandleConfig.DEFAULT_COLOR_ARGB
+    private var pillWidthDp = GestureHandleConfig.DEFAULT_WIDTH_DP
+    private var pillHeightDp = GestureHandleConfig.DEFAULT_HEIGHT_DP
+    private var bottomOffsetDp = GestureHandleConfig.DEFAULT_BOTTOM_OFFSET_DP
+    private var prefsEnabled = false
+    private var hideInFullscreen = true
+    private var immersiveFullscreen = false
 
     fun sync(state: InterceptorServiceState) {
         mainHandler.post {
             opacityPercent = GestureHandleConfig.clampOpacity(state.gestureHandleOpacity)
-            if (state.gestureHandleEnabled) {
-                ensureAttached()
-                bottomView?.setPillAlpha(GestureHandleConfig.opacityAlpha(opacityPercent))
+            pillColorArgb = GestureHandleConfig.normalizeColorArgb(state.gesturePillColorArgb)
+            pillWidthDp = GestureHandleConfig.clampWidthDp(state.gesturePillWidthDp)
+            pillHeightDp = GestureHandleConfig.clampHeightDp(state.gesturePillHeightDp)
+            bottomOffsetDp = GestureHandleConfig.clampBottomOffsetDp(state.gestureBottomOffsetDp)
+            prefsEnabled = state.gestureHandleEnabled
+            hideInFullscreen = state.gestureHandleHideInFullscreen
+            reconcileAttachment()
+        }
+    }
+
+    /** Called when accessibility windows suggest immersive video/game UI. */
+    fun setImmersiveFullscreen(immersive: Boolean) {
+        mainHandler.post {
+            if (immersiveFullscreen == immersive) return@post
+            immersiveFullscreen = immersive
+            reconcileAttachment()
+            if (immersive) {
+                InterceptorStateRepository.diag("GH", "hidden (fullscreen/immersive)")
             } else {
-                detach()
+                InterceptorStateRepository.diag("GH", "shown (left fullscreen)")
             }
+        }
+    }
+
+    private fun shouldShowOverlay(): Boolean =
+        prefsEnabled && !(hideInFullscreen && immersiveFullscreen)
+
+    private fun reconcileAttachment() {
+        if (shouldShowOverlay()) {
+            ensureAttached()
+            applyGeometry()
+            bottomView?.setPillSize(pillWidthDp, pillHeightDp)
+            bottomView?.setPillColor(pillColorArgb)
+            bottomView?.setPillAlpha(GestureHandleConfig.opacityAlpha(opacityPercent))
+        } else {
+            detach()
         }
     }
 
@@ -53,10 +100,10 @@ class GestureHandleController(
 
     private fun ensureAttached() {
         if (attached) return
-        val edgeW = dp(GestureStrokeTracker.EDGE_WIDTH_DP).toInt().coerceAtLeast(1)
-        val bottomH = dp(GestureStrokeTracker.BOTTOM_HEIGHT_DP).toInt().coerceAtLeast(1)
 
         val bottom = BottomHandleView(service).also {
+            it.setPillSize(pillWidthDp, pillHeightDp)
+            it.setPillColor(pillColorArgb)
             it.setPillAlpha(GestureHandleConfig.opacityAlpha(opacityPercent))
             it.listener = object : StrokeViewListener {
                 override fun onGesture(event: GestureNavEvent) = dispatch(event)
@@ -73,25 +120,20 @@ class GestureHandleController(
             }
         }
 
+        val bParams = pillParams()
+        val lParams = edgeParams(Gravity.BOTTOM or Gravity.START)
+        val rParams = edgeParams(Gravity.BOTTOM or Gravity.END)
+
         try {
-            wm.addView(bottom, baseParams(
-                width = LayoutParams.MATCH_PARENT,
-                height = bottomH,
-                gravity = Gravity.BOTTOM,
-            ))
-            wm.addView(left, baseParams(
-                width = edgeW,
-                height = LayoutParams.MATCH_PARENT,
-                gravity = Gravity.START,
-            ))
-            wm.addView(right, baseParams(
-                width = edgeW,
-                height = LayoutParams.MATCH_PARENT,
-                gravity = Gravity.END,
-            ))
+            wm.addView(bottom, bParams)
+            wm.addView(left, lParams)
+            wm.addView(right, rParams)
             bottomView = bottom
             leftEdge = left
             rightEdge = right
+            bottomParams = bParams
+            leftParams = lParams
+            rightParams = rParams
             attached = true
             InterceptorStateRepository.diag("GH", "overlay attached", force = true)
         } catch (e: Exception) {
@@ -102,7 +144,49 @@ class GestureHandleController(
             bottomView = null
             leftEdge = null
             rightEdge = null
+            bottomParams = null
+            leftParams = null
+            rightParams = null
             attached = false
+        }
+    }
+
+    private fun applyGeometry() {
+        val bottom = bottomView ?: return
+        val bParams = bottomParams ?: return
+        // Fixed size always — any updateViewLayout during a stroke makes the pill
+        // "shoot" on vivo/OriginOS and other OEMs.
+        bParams.width = dpPx(GestureHandleConfig.idleHitWidthDp(pillWidthDp))
+        bParams.height = dpPx(GestureHandleConfig.hitHeightDp(pillHeightDp))
+        bParams.y = dpPx(bottomOffsetDp)
+        try {
+            wm.updateViewLayout(bottom, bParams)
+        } catch (_: Exception) {
+        }
+
+        val edgeW = dpPx(GestureHandleConfig.EDGE_WIDTH_DP)
+        val edgeH = dpPx(GestureHandleConfig.EDGE_HEIGHT_DP)
+        leftParams?.let { params ->
+            params.width = edgeW
+            params.height = edgeH
+            params.y = dpPx(bottomOffsetDp)
+            leftEdge?.let { view ->
+                try {
+                    wm.updateViewLayout(view, params)
+                } catch (_: Exception) {
+                }
+            }
+        }
+        rightParams?.let { params ->
+            params.width = edgeW
+            params.height = edgeH
+            params.y = dpPx(bottomOffsetDp)
+            rightEdge?.let { view ->
+                try {
+                    wm.updateViewLayout(view, params)
+                } catch (_: Exception) {
+                }
+            }
         }
     }
 
@@ -113,6 +197,9 @@ class GestureHandleController(
         bottomView = null
         leftEdge = null
         rightEdge = null
+        bottomParams = null
+        leftParams = null
+        rightParams = null
         if (attached) {
             InterceptorStateRepository.diag("GH", "overlay detached")
         }
@@ -132,7 +219,25 @@ class GestureHandleController(
         }
     }
 
-    private fun baseParams(width: Int, height: Int, gravity: Int): LayoutParams {
+    private fun pillParams(): LayoutParams {
+        return baseParams(
+            width = dpPx(GestureHandleConfig.idleHitWidthDp(pillWidthDp)),
+            height = dpPx(GestureHandleConfig.hitHeightDp(pillHeightDp)),
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL,
+            y = dpPx(bottomOffsetDp),
+        )
+    }
+
+    private fun edgeParams(gravity: Int): LayoutParams {
+        return baseParams(
+            width = dpPx(GestureHandleConfig.EDGE_WIDTH_DP),
+            height = dpPx(GestureHandleConfig.EDGE_HEIGHT_DP),
+            gravity = gravity,
+            y = dpPx(bottomOffsetDp),
+        )
+    }
+
+    private fun baseParams(width: Int, height: Int, gravity: Int, y: Int = 0): LayoutParams {
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
             LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
         } else {
@@ -144,11 +249,13 @@ class GestureHandleController(
             height,
             type,
             LayoutParams.FLAG_NOT_FOCUSABLE or
+                LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT,
         ).apply {
             this.gravity = gravity
+            this.y = y
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 layoutInDisplayCutoutMode =
                     LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
@@ -158,6 +265,8 @@ class GestureHandleController(
 
     private fun dp(value: Float): Float = value * density
 
+    private fun dpPx(value: Int): Int = (value * density).toInt().coerceAtLeast(1)
+
     private interface StrokeViewListener {
         fun onGesture(event: GestureNavEvent)
     }
@@ -166,90 +275,401 @@ class GestureHandleController(
     private inner class BottomHandleView(context: Context) : View(context) {
         var listener: StrokeViewListener? = null
         private val pillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = 0xFFFFFFFF.toInt()
+            color = GestureHandleConfig.DEFAULT_COLOR_ARGB
             style = Paint.Style.FILL
         }
         private val pillRect = RectF()
+        private var pillWDp = GestureHandleConfig.DEFAULT_WIDTH_DP
+        private var pillHDp = GestureHandleConfig.DEFAULT_HEIGHT_DP
+        private var baseAlpha = 1f
+        private var pillColor = GestureHandleConfig.DEFAULT_COLOR_ARGB
+        /** 0 = idle, 1 = fully pressed. Uniform capsule scale. */
+        private var pressAmount = 0f
+        /** Finger-follow drawn in onDraw only — never View.translation (OEM jump). */
+        private var dragOffsetX = 0f
+        private var dragOffsetY = 0f
+        private var scaleAnimator: ValueAnimator? = null
+        private var homeAnimator: ValueAnimator? = null
         private var tracker: GestureStrokeTracker? = null
         private val pollLongPress = object : Runnable {
             override fun run() {
                 val t = tracker ?: return
-                val ev = t.onMove(lastX, lastY)
+                maybeRevealPress()
+                val ev = t.onMove(lastRawX, lastRawY)
                 if (ev != null) {
-                    listener?.onGesture(ev)
-                    if (ev is GestureNavEvent.Recents) {
-                        tracker = null
-                        return
-                    }
+                    onGestureResolved(ev)
+                    return
                 }
-                mainHandler.postDelayed(this, 50L)
+                mainHandler.postDelayed(this, 16L)
             }
         }
-        private var lastX = 0f
-        private var lastY = 0f
+        private var downRawX = 0f
+        private var downRawY = 0f
+        private var lastRawX = 0f
+        private var lastRawY = 0f
         private var polling = false
+        private var followAxis: PillFollowAxis? = null
+        private var returningHome = false
+        private var pressShown = false
+        private var downAtMs = 0L
+        /** Show press scale only after a short hold — pure taps stay inert. */
+        private val pressRevealDelayMs = 140L
+        /**
+         * When false, only the bottom pill band is touchable so the swipe
+         * corridor above passes taps through. True for the duration of a stroke.
+         */
+        private var captureTouches = false
+        private val touchableRegion = Region()
+        private var insetsListener: Any? = null
+
+        init {
+            clipToOutline = false
+        }
+
+        override fun onAttachedToWindow() {
+            super.onAttachedToWindow()
+            installInsetsListener()
+            post { applyTouchableRegion() }
+        }
+
+        override fun onDetachedFromWindow() {
+            removeInsetsListener()
+            super.onDetachedFromWindow()
+        }
+
+        override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+            super.onSizeChanged(w, h, oldw, oldh)
+            applyTouchableRegion()
+        }
 
         fun setPillAlpha(alpha: Float) {
-            pillPaint.alpha = (alpha * 255f).toInt().coerceIn(0, 255)
+            baseAlpha = alpha.coerceIn(0f, 1f)
+            applyPaintAlpha()
             invalidate()
         }
 
+        fun setPillColor(colorArgb: Int) {
+            pillColor = GestureHandleConfig.normalizeColorArgb(colorArgb)
+            pillPaint.color = pillColor
+            applyPaintAlpha()
+            invalidate()
+        }
+
+        fun setPillSize(widthDp: Int, heightDp: Int) {
+            pillWDp = GestureHandleConfig.clampWidthDp(widthDp)
+            pillHDp = GestureHandleConfig.clampHeightDp(heightDp)
+            applyTouchableRegion()
+            invalidate()
+        }
+
+        private fun pillBandTopPx(): Int {
+            val h = dp(pillHDp.toFloat())
+            val padTop = dp(GestureHandleConfig.HIT_PADDING_DP.toFloat())
+            val padBottom = dp(GestureHandleConfig.PILL_BOTTOM_INSET_DP.toFloat())
+            return (height - padBottom - h - padTop).toInt().coerceAtLeast(0)
+        }
+
+        /**
+         * Idle: touchable = pill band only (corridor above is pass-through).
+         * Stroke: touchable = full window so swipe MOVE keeps arriving.
+         * No LayoutParams resize — keeps the current animation stable on OEMs.
+         */
+        private fun applyTouchableRegion() {
+            if (width <= 0 || height <= 0) return
+            if (captureTouches) {
+                touchableRegion.set(0, 0, width, height)
+            } else {
+                touchableRegion.set(0, pillBandTopPx(), width, height)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                rootSurfaceControl?.setTouchableRegion(Region(touchableRegion))
+            }
+            // Pre-S: insets listener reads [touchableRegion] on next traversal.
+            viewTreeObserver.dispatchOnGlobalLayout()
+        }
+
+        private fun setCaptureTouches(active: Boolean) {
+            if (captureTouches == active) return
+            captureTouches = active
+            applyTouchableRegion()
+        }
+
+        /**
+         * Hidden ViewTreeObserver.OnComputeInternalInsetsListener via reflection
+         * for API < 31. Accessibility overlays are trusted for pass-through.
+         */
+        private fun installInsetsListener() {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) return
+            if (insetsListener != null) return
+            try {
+                val listenerClass = Class.forName(
+                    "android.view.ViewTreeObserver\$OnComputeInternalInsetsListener",
+                )
+                val infoClass = Class.forName(
+                    "android.view.ViewTreeObserver\$InternalInsetsInfo",
+                )
+                val setTouchableInsets = infoClass.getMethod(
+                    "setTouchableInsets",
+                    Int::class.javaPrimitiveType,
+                )
+                val touchableRegionField = infoClass.getField("touchableRegion")
+                val touchableInsetsRegion = infoClass.getField("TOUCHABLE_INSETS_REGION")
+                    .getInt(null)
+                val proxy = java.lang.reflect.Proxy.newProxyInstance(
+                    listenerClass.classLoader,
+                    arrayOf(listenerClass),
+                ) { _, method, args ->
+                    if (method.name == "onComputeInternalInsets" && args != null && args.isNotEmpty()) {
+                        val info = args[0]
+                        setTouchableInsets.invoke(info, touchableInsetsRegion)
+                        (touchableRegionField.get(info) as Region).set(touchableRegion)
+                    }
+                    null
+                }
+                ViewTreeObserver::class.java
+                    .getMethod("addOnComputeInternalInsetsListener", listenerClass)
+                    .invoke(viewTreeObserver, proxy)
+                insetsListener = proxy
+            } catch (_: Throwable) {
+                insetsListener = null
+            }
+        }
+
+        private fun removeInsetsListener() {
+            val listener = insetsListener ?: return
+            insetsListener = null
+            try {
+                val listenerClass = Class.forName(
+                    "android.view.ViewTreeObserver\$OnComputeInternalInsetsListener",
+                )
+                ViewTreeObserver::class.java
+                    .getMethod("removeOnComputeInternalInsetsListener", listenerClass)
+                    .invoke(viewTreeObserver, listener)
+            } catch (_: Throwable) {
+            }
+        }
+
+        private fun applyPaintAlpha() {
+            // Re-apply base color so Paint.alpha does not stick from a previous frame.
+            pillPaint.color = pillColor
+            val pressedBoost = if (pressAmount > 0.05f) {
+                (baseAlpha + (1f - baseAlpha) * 0.2f * pressAmount).coerceIn(0f, 1f)
+            } else {
+                baseAlpha
+            }
+            pillPaint.alpha = (pressedBoost * 255f).toInt().coerceIn(0, 255)
+        }
+
         override fun onDraw(canvas: Canvas) {
-            val w = dp(GestureStrokeTracker.PILL_WIDTH_DP)
-            val h = dp(GestureStrokeTracker.PILL_HEIGHT_DP)
-            val cx = width / 2f
-            val cy = height * 0.55f
-            pillRect.set(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f)
-            canvas.drawRoundRect(pillRect, h, h, pillPaint)
+            val baseW = dp(pillWDp.toFloat())
+            val baseH = dp(pillHDp.toFloat())
+            val scale = 1f + GestureHandleConfig.PRESS_SCALE_EXTRA * pressAmount
+            val drawW = baseW * scale
+            val drawH = baseH * scale
+            val radius = drawH / 2f
+            val padBottom = dp(GestureHandleConfig.PILL_BOTTOM_INSET_DP.toFloat())
+            val maxX = dp(GestureHandleConfig.DRAG_FOLLOW_X_DP)
+            val maxUp = dp(GestureHandleConfig.DRAG_FOLLOW_UP_DP)
+            val cx = width / 2f + dragOffsetX.coerceIn(-maxX, maxX)
+            val cy = height - padBottom - (baseH / 2f) + dragOffsetY.coerceIn(-maxUp, 0f)
+            pillRect.set(cx - drawW / 2f, cy - drawH / 2f, cx + drawW / 2f, cy + drawH / 2f)
+            canvas.drawRoundRect(pillRect, radius, radius, pillPaint)
         }
 
         override fun onTouchEvent(event: MotionEvent): Boolean {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    lastX = event.x
-                    lastY = event.y
+                    if (!isInPillBand(event.y)) {
+                        return false
+                    }
+                    homeAnimator?.removeAllListeners()
+                    homeAnimator?.cancel()
+                    returningHome = false
+                    pressShown = false
+                    downAtMs = android.os.SystemClock.uptimeMillis()
+                    dragOffsetX = 0f
+                    dragOffsetY = 0f
+                    downRawX = event.rawX
+                    downRawY = event.rawY
+                    lastRawX = event.rawX
+                    lastRawY = event.rawY
+                    followAxis = null
                     tracker = GestureStrokeTracker(
                         zone = GestureZone.BOTTOM,
                         touchSlopPx = dp(GestureStrokeTracker.TOUCH_SLOP_DP),
                         swipeThresholdPx = dp(GestureStrokeTracker.SWIPE_THRESHOLD_DP),
-                    ).also { it.onDown(event.x, event.y) }
+                    ).also { it.onDown(event.rawX, event.rawY) }
+                    // Open full corridor for MOVE without resizing the window.
+                    setCaptureTouches(true)
+                    // No haptic / press scale on DOWN — short taps stay silent.
                     startPoll()
+                    invalidate()
                     return true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    lastX = event.x
-                    lastY = event.y
-                    val ev = tracker?.onMove(event.x, event.y)
+                    if (tracker == null || returningHome) return false
+                    lastRawX = event.rawX
+                    lastRawY = event.rawY
+                    updateDragFollow(event.rawX, event.rawY)
+                    maybeRevealPress()
+                    val ev = tracker?.onMove(event.rawX, event.rawY)
                     if (ev != null) {
-                        listener?.onGesture(ev)
-                        if (ev is GestureNavEvent.Recents) {
-                            stopPoll()
-                            tracker = null
-                        }
+                        onGestureResolved(ev)
                     }
                     return true
                 }
                 MotionEvent.ACTION_UP -> {
+                    if (tracker == null) return false
                     stopPoll()
-                    val ev = tracker?.onUp(event.x, event.y)
+                    val ev = tracker?.onUp(event.rawX, event.rawY)
                     tracker = null
-                    if (ev != null) listener?.onGesture(ev)
+                    setCaptureTouches(false)
+                    if (ev != null) {
+                        onGestureResolved(ev)
+                    } else {
+                        if (pressShown) animatePress(pressed = false)
+                        animateReturnHome()
+                    }
                     return true
                 }
                 MotionEvent.ACTION_CANCEL -> {
+                    if (tracker == null) return false
                     stopPoll()
                     tracker?.onCancel()
                     tracker = null
+                    setCaptureTouches(false)
+                    if (pressShown) animatePress(pressed = false)
+                    animateReturnHome()
                     return true
                 }
             }
             return super.onTouchEvent(event)
         }
 
+        private fun isInPillBand(y: Float): Boolean {
+            return y >= pillBandTopPx().toFloat()
+        }
+
+        private fun maybeRevealPress() {
+            if (pressShown) return
+            val held = android.os.SystemClock.uptimeMillis() - downAtMs
+            val dragging = followAxis != null
+            if (dragging || held >= pressRevealDelayMs) {
+                pressShown = true
+                animatePress(pressed = true)
+            }
+        }
+
+        private fun updateDragFollow(rawX: Float, rawY: Float) {
+            val dead = dp(GestureHandleConfig.DRAG_DEADZONE_DP)
+            val follow = GestureHandleConfig.DRAG_FOLLOW_FACTOR
+            val maxX = dp(GestureHandleConfig.DRAG_FOLLOW_X_DP)
+            val maxUp = dp(GestureHandleConfig.DRAG_FOLLOW_UP_DP)
+            val rawDx = rawX - downRawX
+            val rawDy = rawY - downRawY
+            val absDx = kotlin.math.abs(rawDx)
+            val absDy = kotlin.math.abs(rawDy)
+
+            if (followAxis == null && (absDx >= dead || absDy >= dead)) {
+                followAxis = when {
+                    absDx >= absDy -> PillFollowAxis.LEFT_RIGHT
+                    rawDy < 0f -> PillFollowAxis.UP
+                    else -> null
+                }
+            }
+
+            when (followAxis) {
+                PillFollowAxis.LEFT_RIGHT -> {
+                    val signed = if (absDx <= dead) {
+                        0f
+                    } else {
+                        kotlin.math.sign(rawDx) * (absDx - dead) * follow
+                    }
+                    dragOffsetX = signed.coerceIn(-maxX, maxX)
+                    dragOffsetY = 0f
+                }
+                PillFollowAxis.UP -> {
+                    val up = -rawDy
+                    val followed = if (up <= dead) 0f else (up - dead) * follow
+                    dragOffsetX = 0f
+                    dragOffsetY = (-followed).coerceIn(-maxUp, 0f)
+                }
+                null -> {
+                    dragOffsetX = 0f
+                    dragOffsetY = 0f
+                }
+            }
+            invalidate()
+        }
+
+        private fun onGestureResolved(event: GestureNavEvent) {
+            stopPoll()
+            tracker = null
+            setCaptureTouches(false)
+            // Haptics live in the service only when an action actually fires.
+            if (pressShown) {
+                animatePress(pressed = false)
+            }
+            animateReturnHome()
+            listener?.onGesture(event)
+        }
+
+        private fun animateReturnHome() {
+            followAxis = null
+            returningHome = true
+            homeAnimator?.removeAllListeners()
+            homeAnimator?.cancel()
+            val startX = dragOffsetX
+            val startY = dragOffsetY
+            if (startX == 0f && startY == 0f) {
+                returningHome = false
+                return
+            }
+            val anim = ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = 240L
+                interpolator = DecelerateInterpolator()
+                addUpdateListener { a ->
+                    val t = a.animatedValue as Float
+                    val k = 1f - t
+                    dragOffsetX = startX * k
+                    dragOffsetY = startY * k
+                    invalidate()
+                }
+                addListener(object : android.animation.AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(animation: android.animation.Animator) {
+                        dragOffsetX = 0f
+                        dragOffsetY = 0f
+                        returningHome = false
+                        invalidate()
+                    }
+                })
+            }
+            homeAnimator = anim
+            anim.start()
+        }
+
+        private fun animatePress(pressed: Boolean) {
+            scaleAnimator?.cancel()
+            val start = pressAmount
+            val end = if (pressed) 1f else 0f
+            val anim = ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = if (pressed) 100L else 180L
+                interpolator = DecelerateInterpolator()
+                addUpdateListener { a ->
+                    val t = a.animatedValue as Float
+                    pressAmount = start + (end - start) * t
+                    applyPaintAlpha()
+                    invalidate()
+                }
+            }
+            scaleAnimator = anim
+            anim.start()
+        }
+
         private fun startPoll() {
             if (polling) return
             polling = true
-            mainHandler.postDelayed(pollLongPress, 50L)
+            mainHandler.postDelayed(pollLongPress, 16L)
         }
 
         private fun stopPoll() {
@@ -267,7 +687,6 @@ class GestureHandleController(
         private var tracker: GestureStrokeTracker? = null
 
         init {
-            // Transparent hit target — no draw.
             setBackgroundColor(0x00000000)
         }
 
@@ -288,7 +707,9 @@ class GestureHandleController(
                 MotionEvent.ACTION_UP -> {
                     val ev = tracker?.onUp(event.x, event.y)
                     tracker = null
-                    if (ev != null) listener?.onGesture(ev)
+                    if (ev != null) {
+                        listener?.onGesture(ev)
+                    }
                     return true
                 }
                 MotionEvent.ACTION_CANCEL -> {

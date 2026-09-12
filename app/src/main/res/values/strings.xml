@@ -25,6 +25,8 @@
     <string name="action_mute_description">Toggles media stream volume</string>
     <string name="action_home_title">Home</string>
     <string name="action_home_description">Go to the home screen</string>
+    <string name="action_back_title">Back</string>
+    <string name="action_back_description">Navigate back</string>
 
     <!-- Gesture Handle overlay -->
     <string name="gesture_handle_title">Gesture Handle</string>
@@ -33,12 +35,32 @@
     <string name="gesture_handle_hide_system_hint">Before enabling: turn off / hide the system gesture indicator in your phone\'s navigation settings so you do not get double navigation.</string>
     <string name="gesture_handle_opacity">Opacity</string>
     <string name="gesture_handle_opacity_value">%1$d%%</string>
+    <string name="gesture_handle_color">Color</string>
+    <string name="gesture_handle_haptic">Haptic feedback</string>
+    <string name="gesture_handle_haptic_hint">Vibrate only for the gestures you enable below. Short tap with None stays silent.</string>
+    <string name="gesture_handle_haptic_tap">Tap</string>
+    <string name="gesture_handle_haptic_long_press">Long-press</string>
+    <string name="gesture_handle_haptic_swipe_up">Swipe up</string>
+    <string name="gesture_handle_haptic_swipe_left">Swipe left</string>
+    <string name="gesture_handle_haptic_swipe_right">Swipe right</string>
+    <string name="gesture_handle_haptic_back">Back (edge)</string>
+    <string name="gesture_handle_haptic_recents">Recents</string>
+    <string name="gesture_handle_hide_fullscreen">Hide in fullscreen</string>
+    <string name="gesture_handle_hide_fullscreen_hint">Hide the pill in immersive mode (video, games) when the status bar is gone.</string>
+    <string name="gesture_handle_width">Length</string>
+    <string name="gesture_handle_height">Thickness</string>
+    <string name="gesture_handle_bottom_offset">Height from bottom</string>
+    <string name="gesture_handle_dp_value">%1$d dp</string>
+    <string name="gesture_handle_hit_zone_hint">Idle touch zone hugs the pill. It expands upward only while you press, so swipe-up still works and UI above stays tappable.</string>
     <string name="gesture_handle_tap_action">Tap</string>
     <string name="gesture_handle_long_press_action">Long-press</string>
     <string name="gesture_handle_swipe_up_action">Swipe up</string>
+    <string name="gesture_handle_swipe_left_action">Swipe left</string>
+    <string name="gesture_handle_swipe_right_action">Swipe right</string>
     <string name="gesture_handle_fixed_gestures">Fixed: edge swipe = Back, swipe up and hold = Recents</string>
     <string name="gesture_handle_home_warning">Swipe up is not Home. Assign Home to another remappable gesture or you may be stuck without a home action.</string>
     <string name="will_launch_home">Go to the home screen.</string>
+    <string name="will_launch_back">Go back.</string>
 
     <!-- Status banner -->
     <string name="service_active">Service Active</string>
@@ -56,15 +78,8 @@
     <!-- Target action settings -->
     <string name="target_action_settings">BlueLM TargetAction</string>
     <string name="bluelm_trigger_action">When BlueLM wakes</string>
-    <string name="setup_checklist_title">Setup</string>
-    <string name="setup_step_enable_a11y">Enable accessibility</string>
-    <string name="setup_step_pick_action">Pick a BlueLM TargetAction</string>
-    <string name="setup_step_test">Test the selected action</string>
     <string name="pick_action_hint">No TargetAction yet — Remap stays off until you pick one (None is OK).</string>
     <string name="will_launch_unset">Nothing yet — pick a TargetAction above.</string>
-    <string name="advanced_settings">Advanced</string>
-    <string name="advanced_show">Show advanced</string>
-    <string name="advanced_hide">Hide advanced</string>
     <string name="camera_trigger_action">Shutter TargetAction</string>
     <string name="dont_intercept_in_camera">Skip Remap in camera apps</string>
     <string name="dont_intercept_in_camera_hint">Pass-through for the Shutter if a camera app has been in the foreground for 1.2s. Double-press still opens the camera.</string>
@@ -146,7 +161,7 @@
     <string name="onboarding_step_3">Select Viva la Circle.</string>
     <string name="onboarding_step_4">Turn on Use Viva la Circle and confirm.</string>
     <string name="onboarding_how_title">3. What happens on Remap</string>
-    <string name="onboarding_how_body">Once enabled:\n\n• If the ROM opens BlueLM Wake UI, the service dismisses it, then fires your BlueLM TargetAction.\n• Short-press Power stays with the ROM.\n• Shutter Remap is optional under Advanced.</string>
+    <string name="onboarding_how_body">Once enabled:\n\n• If the ROM opens BlueLM Wake UI, the service dismisses it, then fires your BlueLM TargetAction.\n• Short-press Power stays with the ROM.\n• Shutter Remap is optional — see the Shutter TargetAction section.</string>
 
     <!-- Huawei -->
     <string name="huawei_allow_background">Huawei: allow background launch</string>
@@ -190,11 +205,16 @@
 
     <!-- Volume keys -->
     <string name="volume_keys_section">Volume keys</string>
-    <string name="volume_skip_tracks">Long-press volume: skip tracks</string>
-    <string name="volume_skip_tracks_hint">While media plays, volume stays native. Hold ~0.5s to skip (Up = next, Down = previous). A little volume change during the hold is normal. May not work with the screen off on some ROMs — check VOL in Diagnostics.</string>
+    <string name="volume_skip_tracks">Volume keys: skip tracks</string>
+    <string name="volume_skip_tracks_hint">While media plays: Vol+ skips to next, Vol− to previous. With the ADB permission below, a long-press skips with no volume change (works with the screen off). Without it, a double-press (two quick taps) is used and volume moves at most one step.</string>
+    <string name="volume_syslongpress_active">Long-press skip active — hold a volume key to skip; volume stays put, works with the screen off.</string>
+    <string name="volume_syslongpress_title">Clean long-press skip (no volume change)</string>
+    <string name="volume_syslongpress_hint">Grant one permission once over ADB (same trick MacroDroid uses). Then a long-press of a volume key skips a track without touching volume, even with the screen off. Until then a double-press is used.</string>
+    <string name="volume_syslongpress_copy">Copy ADB command</string>
+    <string name="volume_syslongpress_copied">ADB command copied</string>
     <string name="volume_short_remap">Short-press volume: remap</string>
-    <string name="volume_short_remap_hint">Assign a TargetAction to a short volume tap per key. Keys set to Volume stay system-like unless long-press skip needs them.</string>
-    <string name="volume_long_press_duration">Long-press duration</string>
+    <string name="volume_short_remap_hint">Assign a TargetAction to a short volume tap per key. Keys set to Volume stay system-like except for the double-press skip.</string>
+    <string name="volume_long_press_duration">Double-press window</string>
     <string name="volume_timeout_300">300 ms</string>
     <string name="volume_timeout_500">500 ms</string>
     <string name="volume_timeout_700">700 ms</string>
@@ -209,4 +229,15 @@
     <string name="volume_nls_banner_body">Enable notification access so skip uses the active media player. Without it, a coarser music-active check is used.</string>
     <string name="volume_nls_enable">Notification access</string>
     <string name="volume_nls_enabled">Notification access on</string>
+    <!-- Home menu -->
+    <string name="menu_sections_title">Functions</string>
+    <string name="back">Back</string>
+    <string name="menu_not_set">Not set</string>
+    <string name="menu_on">On</string>
+    <string name="menu_off">Off</string>
+    <string name="menu_volume_skip">Skip tracks</string>
+    <string name="menu_volume_remap">Short-press remap</string>
+    <string name="menu_assistants_hint">Pick an installed assistant as the target</string>
+    <string name="menu_diagnostics_hint">Log and statistics · %1$d Remaps</string>
+    <string name="menu_help_hint">Why accessibility is needed and how Remap works</string>
 </resources>

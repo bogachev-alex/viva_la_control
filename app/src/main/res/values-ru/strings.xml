@@ -25,6 +25,8 @@
     <string name="action_mute_description">Переключает громкость медиапотока</string>
     <string name="action_home_title">Home</string>
     <string name="action_home_description">На рабочий стол</string>
+    <string name="action_back_title">Back</string>
+    <string name="action_back_description">Назад</string>
 
     <!-- Gesture Handle overlay -->
     <string name="gesture_handle_title">Gesture Handle</string>
@@ -33,12 +35,32 @@
     <string name="gesture_handle_hide_system_hint">Перед включением: выключите / спрячьте системный индикатор жестов в настройках навигации телефона, иначе будет двойная навигация.</string>
     <string name="gesture_handle_opacity">Opacity</string>
     <string name="gesture_handle_opacity_value">%1$d%%</string>
+    <string name="gesture_handle_color">Цвет</string>
+    <string name="gesture_handle_haptic">Вибрация</string>
+    <string name="gesture_handle_haptic_hint">Вибрация только для включённых жестов ниже. Короткий тап с «Нет» без вибрации.</string>
+    <string name="gesture_handle_haptic_tap">Тап</string>
+    <string name="gesture_handle_haptic_long_press">Долгое нажатие</string>
+    <string name="gesture_handle_haptic_swipe_up">Свайп вверх</string>
+    <string name="gesture_handle_haptic_swipe_left">Свайп влево</string>
+    <string name="gesture_handle_haptic_swipe_right">Свайп вправо</string>
+    <string name="gesture_handle_haptic_back">Back (край)</string>
+    <string name="gesture_handle_haptic_recents">Recents</string>
+    <string name="gesture_handle_hide_fullscreen">Скрывать в полноэкранном</string>
+    <string name="gesture_handle_hide_fullscreen_hint">Прятать полоску в immersive-режиме (видео, игры), когда статус-бар скрыт.</string>
+    <string name="gesture_handle_width">Длина</string>
+    <string name="gesture_handle_height">Толщина</string>
+    <string name="gesture_handle_bottom_offset">Высота от низа</string>
+    <string name="gesture_handle_dp_value">%1$d dp</string>
+    <string name="gesture_handle_hit_zone_hint">В покое зона почти равна полоске. Расширяется вверх только пока держите палец — свайп работает, UI выше снова нажимается.</string>
     <string name="gesture_handle_tap_action">Тап</string>
     <string name="gesture_handle_long_press_action">Долгое нажатие</string>
     <string name="gesture_handle_swipe_up_action">Свайп вверх</string>
+    <string name="gesture_handle_swipe_left_action">Свайп влево</string>
+    <string name="gesture_handle_swipe_right_action">Свайп вправо</string>
     <string name="gesture_handle_fixed_gestures">Фиксировано: свайп с края = Back, свайп вверх с удержанием = Recents</string>
     <string name="gesture_handle_home_warning">Свайп вверх — не Home. Назначьте Home на другой жест Remap, иначе можно остаться без выхода на рабочий стол.</string>
     <string name="will_launch_home">Переход на рабочий стол.</string>
+    <string name="will_launch_back">Назад.</string>
 
     <!-- Status banner -->
     <string name="service_active">Служба активна</string>
@@ -56,15 +78,8 @@
     <!-- Target action settings -->
     <string name="target_action_settings">TargetAction для BlueLM</string>
     <string name="bluelm_trigger_action">Когда просыпается BlueLM</string>
-    <string name="setup_checklist_title">Настройка</string>
-    <string name="setup_step_enable_a11y">Включить спецвозможности</string>
-    <string name="setup_step_pick_action">Выбрать TargetAction для BlueLM</string>
-    <string name="setup_step_test">Проверить выбранное действие</string>
     <string name="pick_action_hint">TargetAction ещё не выбран — Remap выключен, пока не выберете (None можно).</string>
     <string name="will_launch_unset">Пока ничего — выберите TargetAction выше.</string>
-    <string name="advanced_settings">Дополнительно</string>
-    <string name="advanced_show">Показать дополнительно</string>
-    <string name="advanced_hide">Скрыть дополнительно</string>
     <string name="camera_trigger_action">TargetAction для затвора</string>
     <string name="dont_intercept_in_camera">Не Remap в приложениях камеры</string>
     <string name="dont_intercept_in_camera_hint">Pass-through для затвора, если камера на переднем плане уже 1,2 с. Двойное нажатие по-прежнему открывает камеру.</string>
@@ -146,7 +161,7 @@
     <string name="onboarding_step_3">Выберите Viva la Circle.</string>
     <string name="onboarding_step_4">Включите «Использовать Viva la Circle» и подтвердите.</string>
     <string name="onboarding_how_title">3. Что происходит при Remap</string>
-    <string name="onboarding_how_body">После включения:\n\n• Если прошивка открывает Wake UI BlueLM, служба закрывает его и запускает ваш TargetAction для BlueLM.\n• Короткое нажатие Power остаётся у прошивки.\n• Remap затвора — по желанию в разделе «Дополнительно».</string>
+    <string name="onboarding_how_body">После включения:\n\n• Если прошивка открывает Wake UI BlueLM, служба закрывает его и запускает ваш TargetAction для BlueLM.\n• Короткое нажатие Power остаётся у прошивки.\n• Remap затвора — по желанию, в разделе «TargetAction для затвора».</string>
 
     <!-- Huawei -->
     <string name="huawei_allow_background">Huawei: разрешите фоновый запуск</string>
@@ -190,11 +205,16 @@
 
     <!-- Volume keys -->
     <string name="volume_keys_section">Клавиши громкости</string>
-    <string name="volume_skip_tracks">Долгое нажатие: смена трека</string>
-    <string name="volume_skip_tracks_hint">Пока играет медиа, громкость остаётся системной. Удержание ~0,5 с — смена трека (Up = следующий, Down = предыдущий). Небольшой сдвиг громкости во время удержания нормален. С выключенным экраном на части прошивок может не работать — смотрите VOL в диагностике.</string>
+    <string name="volume_skip_tracks">Клавиши громкости: смена трека</string>
+    <string name="volume_skip_tracks_hint">Пока играет медиа: Vol+ — следующий трек, Vol− — предыдущий. С ADB-разрешением ниже долгое удержание меняет трек без изменения громкости (работает и с выключенным экраном). Без него используется двойное нажатие, и громкость сдвигается максимум на один шаг.</string>
+    <string name="volume_syslongpress_active">Долгое удержание активно — держите клавишу громкости для смены трека; громкость не меняется, работает с выключенным экраном.</string>
+    <string name="volume_syslongpress_title">Чистая смена трека удержанием (без изменения громкости)</string>
+    <string name="volume_syslongpress_hint">Выдайте одно разрешение через ADB (один раз) — тот же приём, что у MacroDroid. После этого долгое удержание клавиши громкости меняет трек, не трогая громкость, даже с выключенным экраном. До этого используется двойное нажатие.</string>
+    <string name="volume_syslongpress_copy">Скопировать ADB-команду</string>
+    <string name="volume_syslongpress_copied">ADB-команда скопирована</string>
     <string name="volume_short_remap">Короткое нажатие: Remap</string>
-    <string name="volume_short_remap_hint">Назначьте TargetAction на короткий тап по каждой клавише. Клавиши с режимом Volume остаются как системные, пока long-press skip их не перехватывает.</string>
-    <string name="volume_long_press_duration">Длительность long-press</string>
+    <string name="volume_short_remap_hint">Назначьте TargetAction на короткий тап по каждой клавише. Клавиши с режимом Volume остаются как системные, кроме двойного нажатия для смены трека.</string>
+    <string name="volume_long_press_duration">Окно двойного нажатия</string>
     <string name="volume_timeout_300">300 мс</string>
     <string name="volume_timeout_500">500 мс</string>
     <string name="volume_timeout_700">700 мс</string>
@@ -209,4 +229,15 @@
     <string name="volume_nls_banner_body">Включите доступ к уведомлениям, чтобы skip шёл в активный плеер. Без этого используется грубая проверка «музыка играет».</string>
     <string name="volume_nls_enable">Доступ к уведомлениям</string>
     <string name="volume_nls_enabled">Доступ к уведомлениям включён</string>
+    <!-- Home menu -->
+    <string name="menu_sections_title">Функции</string>
+    <string name="back">Назад</string>
+    <string name="menu_not_set">Не задано</string>
+    <string name="menu_on">Вкл</string>
+    <string name="menu_off">Выкл</string>
+    <string name="menu_volume_skip">Переключение треков</string>
+    <string name="menu_volume_remap">Remap короткого нажатия</string>
+    <string name="menu_assistants_hint">Выбрать установленный ассистент как цель</string>
+    <string name="menu_diagnostics_hint">Журнал и статистика · Remap: %1$d</string>
+    <string name="menu_help_hint">Зачем нужны спецвозможности и как работает Remap</string>
 </resources>

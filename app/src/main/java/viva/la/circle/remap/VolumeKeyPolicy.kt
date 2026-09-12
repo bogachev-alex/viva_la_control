@@ -3,11 +3,21 @@ package viva.la.circle.remap
 import viva.la.circle.model.VolumeShortAction
 
 /**
- * Volume-key Remap: long-press skip tracks + optional short-press TargetAction.
+ * Volume-key Remap: double-press skip tracks + optional short-press TargetAction.
  *
- * When short-press is [VolumeShortAction.Volume], keys are **not** consumed: the OS keeps
- * native volume (needed on OEMs where AudioManager synth fails). We only observe hold time
- * and fire skip. When short-press is a Remap action, keys are consumed as usual.
+ * OriginOS/Vivo (Android 15+ volume hardening) silently ignores every programmatic
+ * volume API from a non-privileged app — background service *and* foreground activity
+ * alike — so the app cannot re-synthesize or undo a volume step. The only volume change
+ * a volume key can produce is the one the OS makes itself while handling the key.
+ *
+ * Therefore for native [VolumeShortAction.Volume] we **do not consume** presses: the OS
+ * keeps native volume (tap = one step, hold = system ramp). A skip is a **double-press**
+ * (two quick taps): the first tap passes through (one native step), the second is
+ * consumed and fires a MediaSession skip — so a skip costs at most one volume step
+ * instead of the continuous ramp a long-press would leak.
+ *
+ * When the short action is a Remap we consume the key (a Remap fires a TargetAction
+ * instead of volume), and there a long-press still triggers skip.
  */
 object VolumeKeyPolicy {
 
@@ -17,10 +27,10 @@ object VolumeKeyPolicy {
     sealed class DownDecision {
         data object PassThrough : DownDecision()
         data object ContinueConsuming : DownDecision()
-        /** Pass key to OS (native volume) but schedule long-press skip. */
-        data object ObserveStartSkipJob : DownDecision()
-        /** After observe-skip fired, swallow further repeats so volume stops ramping. */
-        data object SwallowAfterSkip : DownDecision()
+        /** First native-volume tap: pass through and arm double-press detection. */
+        data object PassThroughArmDouble : DownDecision()
+        /** Second native-volume tap within the window: consume and fire skip. */
+        data object ConsumeFireSkip : DownDecision()
         /** Consume DOWN and schedule long-press skip (short Remap path). */
         data object ConsumeStartSkipJob : DownDecision()
         /** Consume DOWN for short-press Remap only (no skip). */
@@ -30,7 +40,6 @@ object VolumeKeyPolicy {
     sealed class UpDecision {
         data object PassThrough : UpDecision()
         data object AfterSkip : UpDecision()
-        data object AfterObserve : UpDecision()
         data class FireAction(
             val action: viva.la.circle.model.TargetAction,
             val specificPackage: String?,
@@ -57,7 +66,11 @@ object VolumeKeyPolicy {
     ): Boolean = !inCall && skipTracksEnabled && mediaPlaying
 
     /**
-     * @param passThroughVolume true when short-press should stay native volume (Volume sentinel).
+     * @param passThroughVolume true when the short-press keeps native volume
+     *   ([VolumeShortAction.Volume]); presses are never consumed except the second
+     *   tap of a recognised double-press.
+     * @param secondTapWithinWindow true when this DOWN follows a previous native-volume
+     *   tap within the double-press window (service supplies the timing).
      */
     fun onDown(
         armed: Boolean,
@@ -65,17 +78,18 @@ object VolumeKeyPolicy {
         passThroughVolume: Boolean,
         repeatCount: Int,
         alreadyConsuming: Boolean,
-        alreadyObserving: Boolean,
-        skipFired: Boolean = false,
+        secondTapWithinWindow: Boolean,
     ): DownDecision {
         if (!armed) return DownDecision.PassThrough
         if (passThroughVolume) {
-            // Native volume path — never consume until skip has fired.
-            if (alreadyObserving && skipFired) return DownDecision.SwallowAfterSkip
+            // Native volume: never consume, except the 2nd tap of a double-press.
             if (!canSkip) return DownDecision.PassThrough
             if (repeatCount > 0) return DownDecision.PassThrough
-            if (alreadyObserving) return DownDecision.PassThrough
-            return DownDecision.ObserveStartSkipJob
+            return if (secondTapWithinWindow) {
+                DownDecision.ConsumeFireSkip
+            } else {
+                DownDecision.PassThroughArmDouble
+            }
         }
         if (repeatCount > 0) {
             return if (alreadyConsuming) DownDecision.ContinueConsuming else DownDecision.PassThrough
@@ -85,14 +99,13 @@ object VolumeKeyPolicy {
 
     fun onUp(
         wasConsuming: Boolean,
-        wasObserving: Boolean,
         skipFired: Boolean,
         shortAction: VolumeShortAction,
     ): UpDecision {
-        if (wasObserving) return UpDecision.AfterObserve
         if (!wasConsuming) return UpDecision.PassThrough
         if (skipFired) return UpDecision.AfterSkip
         return when (shortAction) {
+            // Volume never reaches the consume path on a short tap; kept defensive.
             is VolumeShortAction.Volume -> UpDecision.PassThrough
             is VolumeShortAction.Remap -> UpDecision.FireAction(
                 action = shortAction.action,

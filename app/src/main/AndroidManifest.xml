@@ -5,6 +5,10 @@
     <uses-feature android:name="android.hardware.camera.flash" android:required="false" />
 
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Granted via: adb shell pm grant viva.la.circle android.permission.SET_VOLUME_KEY_LONG_PRESS_LISTENER
+         Lets the system route a volume long-press to us without changing volume (screen-off capable). -->
+    <uses-permission android:name="android.permission.SET_VOLUME_KEY_LONG_PRESS_LISTENER"
+        tools:ignore="ProtectedPermissions" />
 
     <queries>
         <intent>

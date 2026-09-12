@@ -47,6 +47,11 @@ enum class TargetAction(
     HOME(
         titleRes = R.string.action_home_title,
         descriptionRes = R.string.action_home_description,
+    ),
+    /** Navigate Back — for Gesture Handle horizontal swipe Remap. */
+    BACK(
+        titleRes = R.string.action_back_title,
+        descriptionRes = R.string.action_back_description,
     );
 
     companion object {
@@ -55,10 +60,11 @@ enum class TargetAction(
             return entries.firstOrNull { it.name == name } ?: default
         }
 
-        /** TargetActions shown for BlueLM / Shutter (excludes nav-only [HOME]). */
-        fun triggerEntries(): List<TargetAction> = entries.filter { it != HOME }
+        /** TargetActions shown for BlueLM / Shutter (excludes nav-only [HOME]/[BACK]). */
+        fun triggerEntries(): List<TargetAction> =
+            entries.filter { it != HOME && it != BACK }
 
-        /** TargetActions for Gesture Handle slot pickers (includes [HOME]). */
+        /** TargetActions for Gesture Handle slot pickers (includes [HOME]/[BACK]). */
         fun gestureHandleEntries(): List<TargetAction> = entries.toList()
     }
 }

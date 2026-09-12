@@ -1,3 +1,4 @@
 <resources>
     <style name="Theme.Bluelm_interceptor" parent="android:Theme.Material.Light.NoActionBar" />
+
 </resources>

@@ -33,6 +33,12 @@ class GestureStrokeTracker(
         terminalFired = false
     }
 
+    /** Adjust origin after the overlay window grows/shrinks under the finger. */
+    fun offsetOrigin(dx: Float, dy: Float) {
+        downX += dx
+        downY += dy
+    }
+
     /**
      * Call on MOVE (and optionally on a timer tick). May return [GestureNavEvent.LongPress]
      * or [GestureNavEvent.Recents] before finger-up.
@@ -104,6 +110,9 @@ class GestureStrokeTracker(
                 when {
                     longPressFired -> null
                     maxUpTravel >= swipeThresholdPx -> GestureNavEvent.SwipeUp
+                    absDx >= swipeThresholdPx && absDx > absDy -> {
+                        if (dx < 0f) GestureNavEvent.SwipeLeft else GestureNavEvent.SwipeRight
+                    }
                     absDx < touchSlopPx && absDy < touchSlopPx -> GestureNavEvent.Tap
                     else -> null
                 }
@@ -135,7 +144,7 @@ class GestureStrokeTracker(
         const val LONG_PRESS_TIMEOUT_MS = 500L
         const val RECENTS_HOLD_MS = 200L
         const val TOUCH_SLOP_DP = 16f
-        const val SWIPE_THRESHOLD_DP = 64f
+        const val SWIPE_THRESHOLD_DP = 48f
         const val EDGE_WIDTH_DP = 28f
         const val BOTTOM_HEIGHT_DP = 72f
         const val PILL_WIDTH_DP = 108f
