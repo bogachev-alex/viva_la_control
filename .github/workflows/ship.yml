@@ -137,8 +137,9 @@ jobs:
         run: |
           apk="app/build/outputs/apk/release/viva_la_control.apk"
           caption="viva_la_control ${VERSION_NAME} (${VERSION_CODE}) ${SHORT_SHA}"$'\n'"https://github.com/bogachev-alex/viva_la_control/releases/tag/v${VERSION_NAME}"
+          # --form-string: a channel @username must not be treated as a curl @file.
           curl -sS -f -X POST \
             "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument" \
-            -F "chat_id=${TELEGRAM_CHAT_ID}" \
+            --form-string "chat_id=${TELEGRAM_CHAT_ID}" \
             -F "document=@${apk};filename=viva_la_control-${VERSION_NAME}.apk" \
-            -F "caption=${caption}"
+            --form-string "caption=${caption}"
