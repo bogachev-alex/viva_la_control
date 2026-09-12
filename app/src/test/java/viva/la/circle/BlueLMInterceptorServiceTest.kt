@@ -495,7 +495,7 @@ class BlueLMInterceptorServiceTest {
         InterceptorStateRepository.diag("KEY", "should not record")
         assertTrue(InterceptorStateRepository.diagSnapshot().isEmpty())
 
-        InterceptorStateRepository.setDiagnosticsEnabled(true)
+        InterceptorStateRepository.setDiagnosticsEnabled(enabled = true)
         InterceptorStateRepository.diag("KEY", "27 KEYCODE_CAMERA action=DOWN")
         val snapshot = InterceptorStateRepository.diagSnapshot()
         assertEquals(1, snapshot.size)

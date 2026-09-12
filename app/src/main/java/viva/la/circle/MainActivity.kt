@@ -125,7 +125,7 @@ class MainActivity : ComponentActivity() {
                         InterceptorStateRepository.setVolumeDownShortAction(this, action)
                     },
                     onDiagnosticsEnabledChange = { enabled ->
-                        InterceptorStateRepository.setDiagnosticsEnabled(enabled)
+                        InterceptorStateRepository.setDiagnosticsEnabled(this, enabled)
                     },
                     onCaptureModeChange = { enabled ->
                         InterceptorStateRepository.setCaptureMode(enabled)

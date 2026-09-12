@@ -73,6 +73,7 @@ class BlueLMInterceptorService : AccessibilityService() {
     private var gestureHandleController: GestureHandleController? = null
     private var gestureHandleCollectJob: Job? = null
     private var immersiveRefreshJob: Job? = null
+    private var assistantUiRecoveryJob: Job? = null
     private var lastImmersiveFullscreen: Boolean? = null
     private val immersiveGate = GestureImmersiveGate()
 
@@ -140,6 +141,15 @@ class BlueLMInterceptorService : AccessibilityService() {
         const val BLUELM_COOLDOWN_MS = 1500L
         /** After Gesture Handle intentionally launches assist/CTS, skip BlueLM Remap. */
         const val INTENTIONAL_ASSIST_SUPPRESS_MS = 2500L
+        /**
+         * After an assist/CTS launch we hide our pill; it must reappear once that session
+         * closes. The window events that would trigger recovery mostly fire inside the
+         * suppress window (so they are ignored), and no fresh event arrives once the user is
+         * simply back in the same app — so poll for the assistant UI to disappear instead of
+         * waiting for an event that never comes.
+         */
+        const val ASSIST_RECOVERY_POLL_MS = 350L
+        const val ASSIST_RECOVERY_MAX_MS = 15_000L
         const val DOUBLE_PRESS_WINDOW_MS = KeyRemapPolicy.DOUBLE_PRESS_WINDOW_MS
         const val POWER_LONG_PRESS_MS = KeyRemapPolicy.POWER_LONG_PRESS_MS
         const val CAMERA_COOLDOWN_MS = KeyRemapPolicy.CAMERA_COOLDOWN_MS
@@ -487,6 +497,36 @@ class BlueLMInterceptorService : AccessibilityService() {
         )
         if (actionMayOpenInterceptedWake(action)) {
             scheduleImmersiveRefresh(immediate = false)
+            scheduleAssistantUiRecovery()
+        }
+    }
+
+    /**
+     * Re-shows the Gesture Handle after an assist/CTS session ends. Polls [isAssistantUiShowingNow]
+     * because dismissing CTS often produces no accessibility event our normal path would catch —
+     * the underlying app was never really backgrounded — leaving the pill hidden until the user
+     * switches apps by hand.
+     */
+    private fun scheduleAssistantUiRecovery() {
+        assistantUiRecoveryJob?.cancel()
+        assistantUiRecoveryJob = serviceScope.launch {
+            val deadline = System.currentTimeMillis() + ASSIST_RECOVERY_MAX_MS
+            while (System.currentTimeMillis() < deadline) {
+                delay(ASSIST_RECOVERY_POLL_MS)
+                val controller = gestureHandleController ?: break
+                if (!InterceptorStateRepository.serviceState.value.gestureHandleEnabled) break
+                if (controller.isInteracting) continue
+                refreshGestureHandleImmersive()
+                // Once the suppress window has passed and the assistant UI is gone,
+                // refreshGestureHandleImmersive() has already re-shown the pill.
+                if (System.currentTimeMillis() >= suppressBlueLMRemapUntilMs &&
+                    !isAssistantUiShowingNow()
+                ) {
+                    InterceptorStateRepository.diag("GH", "assistant UI gone — pill restored")
+                    break
+                }
+            }
+            assistantUiRecoveryJob = null
         }
     }
 
@@ -495,6 +535,8 @@ class BlueLMInterceptorService : AccessibilityService() {
         gestureHandleCollectJob = null
         immersiveRefreshJob?.cancel()
         immersiveRefreshJob = null
+        assistantUiRecoveryJob?.cancel()
+        assistantUiRecoveryJob = null
         lastImmersiveFullscreen = null
         immersiveGate.reset()
         gestureHandleController?.destroy()
@@ -510,6 +552,8 @@ class BlueLMInterceptorService : AccessibilityService() {
         gestureHandleCollectJob = null
         immersiveRefreshJob?.cancel()
         immersiveRefreshJob = null
+        assistantUiRecoveryJob?.cancel()
+        assistantUiRecoveryJob = null
         lastImmersiveFullscreen = null
         immersiveGate.reset()
         gestureHandleController?.destroy()

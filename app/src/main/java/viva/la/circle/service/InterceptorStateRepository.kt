@@ -17,7 +17,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import java.io.File
+import java.text.SimpleDateFormat
 import java.util.ArrayDeque
+import java.util.Date
+import java.util.Locale
+import java.util.concurrent.Executors
 
 data class DiagEvent(
     val timeMs: Long,
@@ -96,6 +101,7 @@ object InterceptorStateRepository {
     private const val KEY_CAMERA_ACTION = "key_camera_action"
     private const val KEY_CAMERA_SPECIFIC_PKG = "key_camera_specific_pkg"
     private const val KEY_SKIP_CAMERA_APP = "key_skip_camera_app"
+    private const val KEY_DIAGNOSTICS_ENABLED = "key_diagnostics_enabled"
     private const val KEY_CAMERA_KEY_CODES = "key_camera_key_codes"
     private const val KEY_HUAWEI_APP_LAUNCH_ACKED = "key_huawei_app_launch_acked"
     private const val KEY_VOLUME_SKIP_TRACKS = "key_volume_skip_tracks"
@@ -143,7 +149,18 @@ object InterceptorStateRepository {
     private val _diagLog = MutableStateFlow<List<DiagEvent>>(emptyList())
     val diagLog: StateFlow<List<DiagEvent>> = _diagLog.asStateFlow()
 
+    // Mirror of the in-memory log on disk (files/diag.log). This ROM drops third-party logcat
+    // output entirely and reading the UI with uiautomator restarts accessibility services, so a
+    // file pulled over `adb run-as` is the only way to see what the service did after the fact.
+    private const val DIAG_FILE = "diag.log"
+    private const val DIAG_FILE_MAX_BYTES = 512 * 1024L
+    @Volatile
+    private var diagDir: File? = null
+    private val diagWriter = Executors.newSingleThreadExecutor { r -> Thread(r, "diag-file") }
+    private val diagTimeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
+
     fun loadFromPreferences(context: Context) {
+        diagDir = context.applicationContext.filesDir
         try {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val blueLMActionStr = prefs.getString(KEY_BLUELM_ACTION, null)
@@ -179,6 +196,7 @@ object InterceptorStateRepository {
                     cameraAction = TargetAction.fromName(cameraActionStr, TargetAction.NONE),
                     cameraSpecificPackage = cameraSpecificPkg,
                     skipCameraApp = skipCameraApp,
+                    diagnosticsEnabled = prefs.getBoolean(KEY_DIAGNOSTICS_ENABLED, it.diagnosticsEnabled),
                     cameraKeyCodes = cameraKeyCodes,
                     detectedOsLabel = osLabel,
                     detectedVendorId = profile.id,
@@ -523,8 +541,11 @@ object InterceptorStateRepository {
         persistBoolean(context, KEY_SKIP_CAMERA_APP, skip)
     }
 
-    fun setDiagnosticsEnabled(enabled: Boolean) {
+    fun setDiagnosticsEnabled(context: Context? = null, enabled: Boolean) {
         _serviceState.update { it.copy(diagnosticsEnabled = enabled) }
+        // Persisted: the service is rebound (and this process restarted) often enough on
+        // vendor ROMs that an in-memory flag rarely survives until the bug reproduces.
+        persistBoolean(context, KEY_DIAGNOSTICS_ENABLED, enabled)
         if (enabled) publishDiagSnapshot()
     }
 
@@ -609,6 +630,22 @@ object InterceptorStateRepository {
             diagEvents.addLast(event)
             if (_diagLog.subscriptionCount.value > 0) {
                 _diagLog.value = diagEvents.toList()
+            }
+        }
+        appendDiagToFile(event)
+    }
+
+    private fun appendDiagToFile(event: DiagEvent) {
+        val dir = diagDir ?: return
+        diagWriter.execute {
+            try {
+                val file = File(dir, DIAG_FILE)
+                if (file.length() > DIAG_FILE_MAX_BYTES) {
+                    file.renameTo(File(dir, "$DIAG_FILE.1"))
+                }
+                val line = "${diagTimeFormat.format(Date(event.timeMs))} ${event.kind} ${event.detail}\n"
+                file.appendText(line)
+            } catch (_: Exception) {
             }
         }
     }
