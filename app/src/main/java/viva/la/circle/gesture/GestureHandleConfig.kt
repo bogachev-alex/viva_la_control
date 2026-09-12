@@ -125,6 +125,18 @@ object GestureHandleConfig {
     fun missingHomeOnSwipe(swipeUpAction: TargetAction): Boolean =
         swipeUpAction != TargetAction.HOME
 
+    /**
+     * Assistant/CTS hide must not [detach] the overlay: removeView on OriginOS
+     * flashes the launcher wallpaper. Keep the windows and pass touches through.
+     */
+    fun shouldAttachOverlay(
+        prefsEnabled: Boolean,
+        hideInFullscreen: Boolean,
+        immersiveFullscreen: Boolean,
+    ): Boolean = prefsEnabled && !(hideInFullscreen && immersiveFullscreen)
+
+    fun overlayPassThroughTouches(assistantUiVisible: Boolean): Boolean = assistantUiVisible
+
     fun opacityAlpha(percent: Int): Float =
         clampOpacity(percent) / 100f
 

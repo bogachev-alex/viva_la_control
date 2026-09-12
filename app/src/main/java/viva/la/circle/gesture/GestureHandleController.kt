@@ -59,6 +59,12 @@ class GestureHandleController(
     var isInteracting: Boolean = false
         private set
 
+    /**
+     * Called when a pill/edge stroke ends. [completed] is false on CANCEL so
+     * deferred assist actions can be dropped instead of firing after a stolen touch.
+     */
+    var onStrokeFinished: ((completed: Boolean) -> Unit)? = null
+
     fun sync(state: InterceptorServiceState) {
         mainHandler.post {
             opacityPercent = GestureHandleConfig.clampOpacity(state.gestureHandleOpacity)
@@ -89,6 +95,7 @@ class GestureHandleController(
     /**
      * Hide our overlay while an assistant / CTS session is up so edge Back goes to
      * that session (not GLOBAL_ACTION_BACK into the app underneath).
+     * Do not remove the windows — OriginOS flashes the launcher on removeView.
      */
     fun setAssistantUiVisible(visible: Boolean) {
         mainHandler.post {
@@ -102,10 +109,12 @@ class GestureHandleController(
         }
     }
 
-    private fun shouldShowOverlay(): Boolean =
-        prefsEnabled &&
-            !(hideInFullscreen && immersiveFullscreen) &&
-            !assistantUiVisible
+    private fun shouldAttachOverlay(): Boolean =
+        GestureHandleConfig.shouldAttachOverlay(
+            prefsEnabled = prefsEnabled,
+            hideInFullscreen = hideInFullscreen,
+            immersiveFullscreen = immersiveFullscreen,
+        )
 
     private fun reconcileAttachmentSafe() {
         if (isInteracting) {
@@ -117,12 +126,15 @@ class GestureHandleController(
 
     private fun reconcileAttachment() {
         pendingReconcileAfterStroke = false
-        if (shouldShowOverlay()) {
+        if (shouldAttachOverlay()) {
             ensureAttached()
-            applyGeometry()
-            bottomView?.setPillSize(pillWidthDp, pillHeightDp)
-            bottomView?.setPillColor(pillColorArgb)
-            bottomView?.setPillAlpha(GestureHandleConfig.opacityAlpha(opacityPercent))
+            if (!assistantUiVisible) {
+                applyGeometry()
+                bottomView?.setPillSize(pillWidthDp, pillHeightDp)
+                bottomView?.setPillColor(pillColorArgb)
+                bottomView?.setPillAlpha(GestureHandleConfig.opacityAlpha(opacityPercent))
+            }
+            setPassThrough(GestureHandleConfig.overlayPassThroughTouches(assistantUiVisible))
         } else {
             detach()
         }
@@ -245,15 +257,39 @@ class GestureHandleController(
         attached = false
     }
 
+    private fun setPassThrough(passThrough: Boolean) {
+        val notTouchable = LayoutParams.FLAG_NOT_TOUCHABLE
+        fun apply(view: View?, params: LayoutParams?) {
+            if (view == null || params == null) return
+            view.visibility = if (passThrough) View.INVISIBLE else View.VISIBLE
+            params.flags = if (passThrough) {
+                params.flags or notTouchable
+            } else {
+                params.flags and notTouchable.inv()
+            }
+            try {
+                wm.updateViewLayout(view, params)
+            } catch (_: Exception) {
+            }
+        }
+        apply(bottomView, bottomParams)
+        apply(leftEdge, leftParams)
+        apply(rightEdge, rightParams)
+    }
+
     private fun dispatch(event: GestureNavEvent) {
         InterceptorStateRepository.diag("GH", "gesture=$event")
         onEvent(event)
     }
 
-    private fun setInteracting(active: Boolean) {
+    private fun setInteracting(active: Boolean, completed: Boolean = true) {
+        val was = isInteracting
         isInteracting = active
         if (!active && pendingReconcileAfterStroke) {
             reconcileAttachment()
+        }
+        if (was && !active) {
+            onStrokeFinished?.invoke(completed)
         }
     }
 
@@ -439,10 +475,10 @@ class GestureHandleController(
             viewTreeObserver.dispatchOnGlobalLayout()
         }
 
-        private fun setCaptureTouches(active: Boolean) {
+        private fun setCaptureTouches(active: Boolean, completed: Boolean = true) {
             if (captureTouches == active) return
             captureTouches = active
-            setInteracting(active)
+            setInteracting(active, completed)
             applyTouchableRegion()
         }
 
@@ -591,7 +627,7 @@ class GestureHandleController(
                         if (pressShown) animatePress(pressed = false)
                         animateReturnHome()
                     }
-                    endStroke()
+                    endStroke(completed = true)
                     return true
                 }
                 MotionEvent.ACTION_CANCEL -> {
@@ -600,7 +636,7 @@ class GestureHandleController(
                     tracker?.onCancel()
                     if (pressShown) animatePress(pressed = false)
                     animateReturnHome()
-                    endStroke()
+                    endStroke(completed = false)
                     return true
                 }
             }
@@ -676,11 +712,11 @@ class GestureHandleController(
             listener?.onGesture(event)
         }
 
-        private fun endStroke() {
+        private fun endStroke(completed: Boolean) {
             tracker = null
             gestureEmitted = false
             strokeOwned = false
-            setCaptureTouches(false)
+            setCaptureTouches(false, completed)
         }
 
         private fun animateReturnHome() {
@@ -777,7 +813,7 @@ class GestureHandleController(
                 MotionEvent.ACTION_UP -> {
                     val ev = tracker?.onUp(event.x, event.y)
                     tracker = null
-                    setInteracting(false)
+                    setInteracting(false, completed = true)
                     if (ev != null) {
                         listener?.onGesture(ev)
                     }
@@ -786,7 +822,7 @@ class GestureHandleController(
                 MotionEvent.ACTION_CANCEL -> {
                     tracker?.onCancel()
                     tracker = null
-                    setInteracting(false)
+                    setInteracting(false, completed = false)
                     return true
                 }
             }

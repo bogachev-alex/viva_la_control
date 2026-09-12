@@ -423,6 +423,24 @@ class BlueLMInterceptorServiceTest {
         assertTrue(BlueLMInterceptorService.actionMayOpenInterceptedWake(TargetAction.DEFAULT_ASSISTANT))
         assertFalse(BlueLMInterceptorService.actionMayOpenInterceptedWake(TargetAction.FLASHLIGHT))
         assertFalse(BlueLMInterceptorService.actionMayOpenInterceptedWake(TargetAction.HOME))
+        assertTrue(
+            BlueLMInterceptorService.shouldDeferWakeActionUntilStrokeEnd(
+                TargetAction.CIRCLE_TO_SEARCH,
+                strokeActive = true,
+            ),
+        )
+        assertFalse(
+            BlueLMInterceptorService.shouldDeferWakeActionUntilStrokeEnd(
+                TargetAction.CIRCLE_TO_SEARCH,
+                strokeActive = false,
+            ),
+        )
+        assertFalse(
+            BlueLMInterceptorService.shouldDeferWakeActionUntilStrokeEnd(
+                TargetAction.HOME,
+                strokeActive = true,
+            ),
+        )
     }
 
     @Test
@@ -454,6 +472,35 @@ class BlueLMInterceptorServiceTest {
                 "com.android.chrome",
                 "com.android.chrome.Main",
                 own,
+            ),
+        )
+        assertFalse(
+            "Remap suppress must not hide the pill on its own",
+            BlueLMInterceptorService.shouldHideGestureHandleDuringAssistSession(
+                assistantUiShowing = false,
+            ),
+        )
+        assertTrue(
+            BlueLMInterceptorService.shouldHideGestureHandleDuringAssistSession(
+                assistantUiShowing = true,
+            ),
+        )
+        assertFalse(
+            BlueLMInterceptorService.shouldEndAssistPillRecovery(
+                assistantUiShowing = false,
+                sawAssistantUi = false,
+            ),
+        )
+        assertFalse(
+            BlueLMInterceptorService.shouldEndAssistPillRecovery(
+                assistantUiShowing = true,
+                sawAssistantUi = true,
+            ),
+        )
+        assertTrue(
+            BlueLMInterceptorService.shouldEndAssistPillRecovery(
+                assistantUiShowing = false,
+                sawAssistantUi = true,
             ),
         )
     }

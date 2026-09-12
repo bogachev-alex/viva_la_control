@@ -10,6 +10,7 @@ import android.hardware.camera2.CameraManager
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
+import android.os.IBinder
 import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
@@ -544,6 +545,179 @@ object ActionExecutionEngine {
         return named.firstOrNull { method ->
             method.parameterTypes.size == 1 && method.parameterTypes[0] == Bundle::class.java
         } ?: named.firstOrNull()
+    }
+
+    /**
+     * Direct VoiceInteraction session with screenshot of the current app.
+     * Skips StatusBar.startAssist, which on some OEMs HOMEs the foreground task.
+     */
+    fun invokeVoiceInteractionSession(
+        context: Context,
+        args: Bundle?,
+        flags: Int,
+    ): Boolean {
+        exemptHiddenApis()
+        if (invokeVoiceInteractionManagerShowSession(context, args, flags)) {
+            return true
+        }
+        return invokeShowSessionFromSession(context, args, flags)
+    }
+
+    private fun invokeVoiceInteractionManagerShowSession(
+        context: Context,
+        args: Bundle?,
+        flags: Int,
+    ): Boolean {
+        return try {
+            val vim = context.getSystemService("voiceinteraction") ?: return false
+            val method = pickShowSessionMethod(allReflectMethods(vim.javaClass)) ?: return false
+            method.isAccessible = true
+            var usedFlags = false
+            val invokeArgs = Array(method.parameterCount) { index ->
+                val type = method.parameterTypes[index]
+                when {
+                    type == Bundle::class.java -> args
+                    type == String::class.java -> voiceSessionAttributionTag(context)
+                    type == Int::class.javaPrimitiveType || type == Integer::class.java -> {
+                        if (!usedFlags) {
+                            usedFlags = true
+                            flags
+                        } else {
+                            android.os.Process.myUid() / 100000
+                        }
+                    }
+                    else -> null
+                }
+            }
+            method.invoke(vim, *invokeArgs)
+            InterceptorStateRepository.diag(
+                "ACT",
+                "invoked VoiceInteractionManager.showSession params=${method.parameterCount} flags=$flags",
+            )
+            true
+        } catch (e: Exception) {
+            val cause = e.cause ?: e
+            InterceptorStateRepository.diag(
+                "ACT",
+                "VoiceInteractionManager.showSession failed: ${cause.message}",
+            )
+            false
+        }
+    }
+
+    fun pickShowSessionMethod(
+        methods: Array<out java.lang.reflect.Method>,
+    ): java.lang.reflect.Method? {
+        return methods.filter { it.name == "showSession" }
+            .filter { method ->
+                val params = method.parameterTypes
+                params.isNotEmpty() && params[0] == Bundle::class.java
+            }
+            .minByOrNull { it.parameterCount }
+    }
+
+    private fun invokeShowSessionFromSession(
+        context: Context,
+        args: Bundle?,
+        flags: Int,
+    ): Boolean {
+        return try {
+            val vims = voiceInteractionManagerService()
+            if (vims == null) {
+                InterceptorStateRepository.diag("ACT", "showSession skipped: no voiceinteraction binder")
+                return false
+            }
+            val method = pickShowSessionFromSessionMethod(allReflectMethods(vims.javaClass))
+            if (method == null) {
+                InterceptorStateRepository.diag("ACT", "showSession skipped: no showSessionFromSession method")
+                return false
+            }
+            method.isAccessible = true
+            var usedFlags = false
+            val invokeArgs = Array(method.parameterCount) { index ->
+                val type = method.parameterTypes[index]
+                when {
+                    type == IBinder::class.java -> null
+                    type == Bundle::class.java -> args
+                    type == String::class.java -> voiceSessionAttributionTag(context)
+                    type == Int::class.javaPrimitiveType || type == Integer::class.java -> {
+                        if (!usedFlags) {
+                            usedFlags = true
+                            flags
+                        } else {
+                            android.os.Process.myUid() / 100000
+                        }
+                    }
+                    else -> null
+                }
+            }
+            val result = method.invoke(vims, *invokeArgs)
+            val ok = result as? Boolean ?: true
+            InterceptorStateRepository.diag(
+                "ACT",
+                "invoked showSessionFromSession ok=$ok params=${method.parameterCount} flags=$flags",
+            )
+            ok
+        } catch (e: Exception) {
+            val cause = e.cause ?: e
+            InterceptorStateRepository.diag("ACT", "showSession failed: ${cause.message}")
+            Log.e(TAG, "showSessionFromSession failed", e)
+            false
+        }
+    }
+
+    fun pickShowSessionFromSessionMethod(
+        methods: Array<out java.lang.reflect.Method>,
+    ): java.lang.reflect.Method? {
+        return methods.filter { it.name == "showSessionFromSession" }
+            .filter { method ->
+                val params = method.parameterTypes
+                params.size >= 3 &&
+                    params[0] == IBinder::class.java &&
+                    params[1] == Bundle::class.java &&
+                    (params[2] == Int::class.javaPrimitiveType || params[2] == Integer::class.java)
+            }
+            .maxByOrNull { it.parameterCount }
+    }
+
+    private fun allReflectMethods(clazz: Class<*>): Array<out java.lang.reflect.Method> {
+        val published = clazz.methods
+        val declared = clazz.declaredMethods
+        return Array(published.size + declared.size) { index ->
+            if (index < published.size) published[index] else declared[index - published.size]
+        }
+    }
+
+    private fun exemptHiddenApis() {
+        try {
+            val clazz = Class.forName("dalvik.system.VMRuntime")
+            val getRuntime = clazz.getDeclaredMethod("getRuntime")
+            val runtime = getRuntime.invoke(null)
+            val setExemptions = clazz.getDeclaredMethod(
+                "setHiddenApiExemptions",
+                Array<String>::class.java,
+            )
+            setExemptions.invoke(runtime, arrayOf("L"))
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun voiceSessionAttributionTag(context: Context): String {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            return context.attributionTag ?: context.packageName
+        }
+        return context.packageName
+    }
+
+    private fun voiceInteractionManagerService(): Any? {
+        val serviceManager = Class.forName("android.os.ServiceManager")
+        val getService = serviceManager.getMethod("getService", String::class.java)
+        val binder = getService.invoke(null, "voiceinteraction") as? IBinder ?: return null
+        val stub = Class.forName(
+            "com.android.internal.app.IVoiceInteractionManagerService\$Stub",
+        )
+        val asInterface = stub.getMethod("asInterface", IBinder::class.java)
+        return asInterface.invoke(null, binder)
     }
 
     /**

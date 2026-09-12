@@ -86,6 +86,9 @@ class BlueLMInterceptorService : AccessibilityService() {
      * volume path stays pure pass-through; short presses keep native volume.
      */
     private var volumeLongPressListener: VolumeLongPressListener? = null
+    private var deferredWakeAction: TargetAction? = null
+    private var deferredWakePackage: String? = null
+    private var debugTriggerRegistered = false
 
     private class VolumeGestureState {
         var consuming: Boolean = false
@@ -142,13 +145,12 @@ class BlueLMInterceptorService : AccessibilityService() {
         /** After Gesture Handle intentionally launches assist/CTS, skip BlueLM Remap. */
         const val INTENTIONAL_ASSIST_SUPPRESS_MS = 2500L
         /**
-         * After an assist/CTS launch we hide our pill; it must reappear once that session
-         * closes. The window events that would trigger recovery mostly fire inside the
-         * suppress window (so they are ignored), and no fresh event arrives once the user is
-         * simply back in the same app — so poll for the assistant UI to disappear instead of
-         * waiting for an event that never comes.
+         * After an assist/CTS launch, hide the pill only while that session is
+         * actually showing. Poll often so we hide shortly after Lens appears and
+         * restore as soon as it is gone — not when the BlueLM remap suppress timer
+         * expires (that left a 1–2s hole after Back).
          */
-        const val ASSIST_RECOVERY_POLL_MS = 350L
+        const val ASSIST_RECOVERY_POLL_MS = 80L
         const val ASSIST_RECOVERY_MAX_MS = 15_000L
         const val DOUBLE_PRESS_WINDOW_MS = KeyRemapPolicy.DOUBLE_PRESS_WINDOW_MS
         const val POWER_LONG_PRESS_MS = KeyRemapPolicy.POWER_LONG_PRESS_MS
@@ -157,6 +159,7 @@ class BlueLMInterceptorService : AccessibilityService() {
         const val MAX_DISMISS_BACKS = 3
         const val HWCTS_DISMISS_BACKS = RemapSession.HWCTS_DISMISS_BACKS
         const val COPILOT_HAMMER_MIN_INTERVAL_MS = 40L
+        const val DEBUG_TRIGGER_ACTION = "viva.la.circle.DEBUG_TRIGGER"
 
         val KNOWN_CAMERA_PACKAGES = setOf(
             "com.vivo.camera",
@@ -260,6 +263,15 @@ class BlueLMInterceptorService : AccessibilityService() {
             else -> false
         }
 
+        /**
+         * OriginOS StatusBar.startAssist HOMEs the current task if a pointer is still
+         * down in the nav region. Fire assist/CTS only after the pill stroke ends.
+         */
+        fun shouldDeferWakeActionUntilStrokeEnd(
+            action: TargetAction,
+            strokeActive: Boolean,
+        ): Boolean = strokeActive && actionMayOpenInterceptedWake(action)
+
         fun isCameraApp(packageName: String?, className: String?, ownPackageName: String = ""): Boolean {
             val pkg = packageName?.lowercase() ?: ""
             if (pkg.isEmpty()) return false
@@ -320,6 +332,20 @@ class BlueLMInterceptorService : AccessibilityService() {
             if (isAssistSessionForeground(packageName, className)) return true
             return InterceptedAssistant.isWakeUi(packageName, className, ownPackage)
         }
+
+        /**
+         * Remap suppress must not keep the pill detached. Detaching before CTS is
+         * on screen flashes the launcher; keeping it detached after Back leaves a
+         * 1–2s hole.
+         */
+        fun shouldHideGestureHandleDuringAssistSession(
+            assistantUiShowing: Boolean,
+        ): Boolean = assistantUiShowing
+
+        fun shouldEndAssistPillRecovery(
+            assistantUiShowing: Boolean,
+            sawAssistantUi: Boolean,
+        ): Boolean = sawAssistantUi && !assistantUiShowing
 
         fun shouldPassThroughCameraKey(
             skipWhileCameraOpen: Boolean,
@@ -382,7 +408,12 @@ class BlueLMInterceptorService : AccessibilityService() {
 
         gestureHandleController = GestureHandleController(this) { event ->
             handleGestureNavEvent(event)
+        }.also { controller ->
+            controller.onStrokeFinished = { completed ->
+                flushDeferredWakeAction(completed)
+            }
         }
+        registerDebugTrigger()
         gestureHandleCollectJob?.cancel()
         gestureHandleCollectJob = serviceScope.launch {
             InterceptorStateRepository.serviceState.collect { state ->
@@ -477,13 +508,40 @@ class BlueLMInterceptorService : AccessibilityService() {
     ) {
         if (action == TargetAction.NONE) return
         if (haptic) GestureHandleHaptics.confirm(this)
+        if (shouldDeferWakeActionUntilStrokeEnd(
+                action,
+                gestureHandleController?.isInteracting == true,
+            )
+        ) {
+            deferredWakeAction = action
+            deferredWakePackage = specificPackage
+            InterceptorStateRepository.diag("GH", "defer $action until stroke end")
+            return
+        }
+        executeGestureHandleAction(action, specificPackage)
+    }
+
+    private fun flushDeferredWakeAction(completed: Boolean) {
+        val action = deferredWakeAction ?: return
+        val pkg = deferredWakePackage
+        deferredWakeAction = null
+        deferredWakePackage = null
+        if (!completed) {
+            InterceptorStateRepository.diag("GH", "drop deferred $action (stroke cancelled)")
+            return
+        }
+        executeGestureHandleAction(action, pkg)
+    }
+
+    private fun executeGestureHandleAction(
+        action: TargetAction,
+        specificPackage: String?,
+    ) {
         // launchAssist can surface BlueLM/Celia Wake UI. Remap would then hammer BACK
         // (often into the app under the overlay) and re-fire — suppress that window.
         if (actionMayOpenInterceptedWake(action)) {
             suppressBlueLMRemapUntilMs =
                 System.currentTimeMillis() + INTENTIONAL_ASSIST_SUPPRESS_MS
-            // Drop our edge strips before assist appears so Back closes assist, not the app.
-            gestureHandleController?.setAssistantUiVisible(true)
             InterceptorStateRepository.diag(
                 "GH",
                 "suppress BlueLM Remap ${INTENTIONAL_ASSIST_SUPPRESS_MS}ms (intentional $action)",
@@ -501,6 +559,38 @@ class BlueLMInterceptorService : AccessibilityService() {
         }
     }
 
+    private val debugTriggerReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val actionName = intent?.getStringExtra("action") ?: TargetAction.CIRCLE_TO_SEARCH.name
+            val action = TargetAction.fromName(actionName, TargetAction.CIRCLE_TO_SEARCH)
+            InterceptorStateRepository.diag("DBG", "broadcast trigger $action", force = true)
+            fireGestureHandleAction(action, null, haptic = false)
+        }
+    }
+
+    private fun registerDebugTrigger() {
+        if (debugTriggerRegistered) return
+        if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE == 0) {
+            return
+        }
+        val filter = IntentFilter(DEBUG_TRIGGER_ACTION)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(debugTriggerReceiver, filter, Context.RECEIVER_EXPORTED)
+        } else {
+            registerReceiver(debugTriggerReceiver, filter)
+        }
+        debugTriggerRegistered = true
+    }
+
+    private fun unregisterDebugTrigger() {
+        if (!debugTriggerRegistered) return
+        debugTriggerRegistered = false
+        try {
+            unregisterReceiver(debugTriggerReceiver)
+        } catch (_: Exception) {
+        }
+    }
+
     /**
      * Re-shows the Gesture Handle after an assist/CTS session ends. Polls [isAssistantUiShowingNow]
      * because dismissing CTS often produces no accessibility event our normal path would catch —
@@ -511,17 +601,16 @@ class BlueLMInterceptorService : AccessibilityService() {
         assistantUiRecoveryJob?.cancel()
         assistantUiRecoveryJob = serviceScope.launch {
             val deadline = System.currentTimeMillis() + ASSIST_RECOVERY_MAX_MS
+            var sawAssistantUi = false
             while (System.currentTimeMillis() < deadline) {
                 delay(ASSIST_RECOVERY_POLL_MS)
                 val controller = gestureHandleController ?: break
                 if (!InterceptorStateRepository.serviceState.value.gestureHandleEnabled) break
                 if (controller.isInteracting) continue
                 refreshGestureHandleImmersive()
-                // Once the suppress window has passed and the assistant UI is gone,
-                // refreshGestureHandleImmersive() has already re-shown the pill.
-                if (System.currentTimeMillis() >= suppressBlueLMRemapUntilMs &&
-                    !isAssistantUiShowingNow()
-                ) {
+                val showing = isAssistantUiShowingNow()
+                if (showing) sawAssistantUi = true
+                if (shouldEndAssistPillRecovery(showing, sawAssistantUi)) {
                     InterceptorStateRepository.diag("GH", "assistant UI gone — pill restored")
                     break
                 }
@@ -539,8 +628,12 @@ class BlueLMInterceptorService : AccessibilityService() {
         assistantUiRecoveryJob = null
         lastImmersiveFullscreen = null
         immersiveGate.reset()
+        deferredWakeAction = null
+        deferredWakePackage = null
+        gestureHandleController?.onStrokeFinished = null
         gestureHandleController?.destroy()
         gestureHandleController = null
+        unregisterDebugTrigger()
         InterceptorStateRepository.updateRunning(isRunning = false)
         InterceptorStateRepository.diag("SVC", "unbound")
         return super.onUnbind(intent)
@@ -556,8 +649,12 @@ class BlueLMInterceptorService : AccessibilityService() {
         assistantUiRecoveryJob = null
         lastImmersiveFullscreen = null
         immersiveGate.reset()
+        deferredWakeAction = null
+        deferredWakePackage = null
+        gestureHandleController?.onStrokeFinished = null
         gestureHandleController?.destroy()
         gestureHandleController = null
+        unregisterDebugTrigger()
         volumeLongPressListener?.unregister()
         volumeLongPressListener = null
         InterceptorStateRepository.setVolumeLongPressListenerActive(false)
@@ -996,8 +1093,7 @@ class BlueLMInterceptorService : AccessibilityService() {
             scheduleImmersiveRefresh(immediate = false)
             return
         }
-        val now = System.currentTimeMillis()
-        val assistantUi = isAssistantUiShowingNow() || now < suppressBlueLMRemapUntilMs
+        val assistantUi = shouldHideGestureHandleDuringAssistSession(isAssistantUiShowingNow())
         controller.setAssistantUiVisible(assistantUi)
 
         val dm = resources.displayMetrics

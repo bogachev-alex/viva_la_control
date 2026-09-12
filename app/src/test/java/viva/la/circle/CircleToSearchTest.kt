@@ -18,6 +18,57 @@ class CircleToSearchTest {
     }
 
     @Test
+    fun showSessionFlagsAreAssistScreenshotApplication() {
+        assertEquals(7, CircleToSearch.SHOW_SESSION_FLAGS)
+    }
+
+    @Test
+    fun triggerPrefersVoiceSessionOverLaunchAssist() {
+        var sessionCalls = 0
+        var assistCalls = 0
+        val ok = CircleToSearch.triggerWith(
+            entryPoint = 1,
+            showSession = {
+                sessionCalls++
+                true
+            },
+            launchAssist = {
+                assistCalls++
+                true
+            },
+        )
+        assertTrue(ok)
+        assertEquals(1, sessionCalls)
+        assertEquals(0, assistCalls)
+    }
+
+    @Test
+    fun triggerFallsBackToLaunchAssistWhenSessionFails() {
+        var assistCalls = 0
+        val ok = CircleToSearch.triggerWith(
+            entryPoint = 1,
+            showSession = { false },
+            launchAssist = {
+                assistCalls++
+                true
+            },
+        )
+        assertTrue(ok)
+        assertEquals(1, assistCalls)
+    }
+
+    @Test
+    fun triggerFailsWhenBothPathsMiss() {
+        assertFalse(
+            CircleToSearch.triggerWith(
+                entryPoint = 1,
+                showSession = { false },
+                launchAssist = { false },
+            ),
+        )
+    }
+
+    @Test
     fun isGoogleAssistantSettingReadsComponentAndPackage() {
         assertTrue(
             CircleToSearch.isGoogleAssistantSetting(

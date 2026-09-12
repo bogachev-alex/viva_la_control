@@ -34,6 +34,33 @@ class GestureHandleConfigTest {
     }
 
     @Test
+    fun assistantUiDoesNotDetachOverlay() {
+        assertTrue(
+            GestureHandleConfig.shouldAttachOverlay(
+                prefsEnabled = true,
+                hideInFullscreen = true,
+                immersiveFullscreen = false,
+            ),
+        )
+        assertFalse(
+            GestureHandleConfig.shouldAttachOverlay(
+                prefsEnabled = true,
+                hideInFullscreen = true,
+                immersiveFullscreen = true,
+            ),
+        )
+        assertFalse(
+            GestureHandleConfig.shouldAttachOverlay(
+                prefsEnabled = false,
+                hideInFullscreen = false,
+                immersiveFullscreen = false,
+            ),
+        )
+        assertTrue(GestureHandleConfig.overlayPassThroughTouches(assistantUiVisible = true))
+        assertFalse(GestureHandleConfig.overlayPassThroughTouches(assistantUiVisible = false))
+    }
+
+    @Test
     fun opacityClampedAndAlpha() {
         assertEquals(0, GestureHandleConfig.clampOpacity(-5))
         assertEquals(100, GestureHandleConfig.clampOpacity(140))

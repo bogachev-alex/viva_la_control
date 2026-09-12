@@ -13,10 +13,11 @@ import viva.la.circle.model.TargetAction
 import viva.la.circle.service.InterceptorStateRepository
 
 /**
- * Circle to Search via SearchManager.launchAssist(Bundle). SystemUI adds
- * SHOW_WITH_SCREENSHOT; the Google app reads omni.entry_point and opens LensientActivity
- * instead of the ordinary assistant. Path idea from MiCTS (GPL-3.0); this implementation
- * is original.
+ * Circle to Search. Prefer a VoiceInteraction session with screenshot of the current
+ * app (overlay). Fall back to SearchManager.launchAssist, which goes through StatusBar
+ * and on OriginOS can HOME the current task if a finger is still on the nav region.
+ * The Google app reads omni.entry_point and opens LensientActivity instead of the
+ * ordinary assistant. Path idea from MiCTS (GPL-3.0); this implementation is original.
  */
 object CircleToSearch {
 
@@ -26,6 +27,13 @@ object CircleToSearch {
     const val KEY_ENTRY_POINT = "omni.entry_point"
     const val KEY_INVOCATION_TIME = "invocation_time_ms"
     const val DEFAULT_ENTRY_POINT = 1
+
+    /**
+     * VoiceInteractionSession.SHOW_WITH_ASSIST | SHOW_WITH_SCREENSHOT |
+     * SHOW_SOURCE_APPLICATION. Application source skips the OEM assist-gesture
+     * animation that can flash the launcher.
+     */
+    const val SHOW_SESSION_FLAGS = 1 or 2 or 4
 
     data class Readiness(
         val googleInstalled: Boolean,
@@ -102,7 +110,31 @@ object CircleToSearch {
 
     fun trigger(context: Context, entryPoint: Int = DEFAULT_ENTRY_POINT): Boolean {
         val args = sessionArgs(entryPoint)
-        if (ActionExecutionEngine.invokeSystemAssistGesture(context, args)) {
+        return triggerWith(
+            entryPoint = entryPoint,
+            showSession = {
+                ActionExecutionEngine.invokeVoiceInteractionSession(
+                    context,
+                    args,
+                    SHOW_SESSION_FLAGS,
+                )
+            },
+            launchAssist = {
+                ActionExecutionEngine.invokeSystemAssistGesture(context, args)
+            },
+        )
+    }
+
+    fun triggerWith(
+        entryPoint: Int,
+        showSession: () -> Boolean,
+        launchAssist: () -> Boolean,
+    ): Boolean {
+        if (showSession()) {
+            InterceptorStateRepository.diag("CTS", "trigger via showSession entry=$entryPoint")
+            return true
+        }
+        if (launchAssist()) {
             InterceptorStateRepository.diag("CTS", "trigger via launchAssist entry=$entryPoint")
             return true
         }

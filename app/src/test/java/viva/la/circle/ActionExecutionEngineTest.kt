@@ -297,4 +297,55 @@ class ActionExecutionEngineTest {
         assertEquals(1, method?.parameterTypes?.size)
         assertEquals(android.os.Bundle::class.java, method?.parameterTypes?.get(0))
     }
+
+    @Suppress("unused")
+    private class FakeVoiceInteractionManagerService {
+        fun showSessionFromSession(token: android.os.IBinder, args: android.os.Bundle, flags: Int) {}
+        fun showSessionFromSession(
+            token: android.os.IBinder,
+            args: android.os.Bundle,
+            flags: Int,
+            attributionTag: String,
+        ) {}
+        fun showSessionFromSession(
+            token: android.os.IBinder,
+            args: android.os.Bundle,
+            flags: Int,
+            attributionTag: String,
+            userId: Int,
+        ) {}
+        fun other() {}
+    }
+
+    @Test
+    fun pickShowSessionPrefersLongestBinderBundleFlagsSignature() {
+        val method = ActionExecutionEngine.pickShowSessionFromSessionMethod(
+            FakeVoiceInteractionManagerService::class.java.methods,
+        )
+        assertEquals("showSessionFromSession", method?.name)
+        assertEquals(5, method?.parameterTypes?.size)
+        assertEquals(android.os.IBinder::class.java, method?.parameterTypes?.get(0))
+        assertEquals(android.os.Bundle::class.java, method?.parameterTypes?.get(1))
+        assertEquals(Int::class.javaPrimitiveType, method?.parameterTypes?.get(2))
+        assertEquals(String::class.java, method?.parameterTypes?.get(3))
+        assertEquals(Int::class.javaPrimitiveType, method?.parameterTypes?.get(4))
+    }
+
+    @Suppress("unused")
+    private class FakeVoiceInteractionManager {
+        fun showSession(args: android.os.Bundle, flags: Int) {}
+        fun showSession(args: android.os.Bundle, flags: Int, attributionTag: String) {}
+        fun other() {}
+    }
+
+    @Test
+    fun pickShowSessionPrefersShortestBundleFirstSignature() {
+        val method = ActionExecutionEngine.pickShowSessionMethod(
+            FakeVoiceInteractionManager::class.java.methods,
+        )
+        assertEquals("showSession", method?.name)
+        assertEquals(2, method?.parameterTypes?.size)
+        assertEquals(android.os.Bundle::class.java, method?.parameterTypes?.get(0))
+        assertEquals(Int::class.javaPrimitiveType, method?.parameterTypes?.get(1))
+    }
 }
