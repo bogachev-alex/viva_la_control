@@ -3,6 +3,20 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+val shippedVersionCode = providers.gradleProperty("versionCode")
+    .map { it.toInt() }
+    .orElse(1)
+val shippedVersionName = providers.gradleProperty("versionName")
+    .orElse("1.0")
+val keystorePath = providers.environmentVariable("ANDROID_KEYSTORE_PATH")
+val keystorePassword = providers.environmentVariable("ANDROID_KEYSTORE_PASSWORD")
+val keyAliasName = providers.environmentVariable("ANDROID_KEY_ALIAS")
+val releaseKeyPassword = providers.environmentVariable("ANDROID_KEY_PASSWORD")
+val canSignRelease = keystorePath.isPresent &&
+    keystorePassword.isPresent &&
+    keyAliasName.isPresent &&
+    releaseKeyPassword.isPresent
+
 android {
     namespace = "viva.la.circle"
     compileSdk {
@@ -13,16 +27,30 @@ android {
         applicationId = "viva.la.circle"
         minSdk = 23
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = shippedVersionCode.get()
+        versionName = shippedVersionName.get()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    if (canSignRelease) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(keystorePath.get())
+                storePassword = keystorePassword.get()
+                keyAlias = keyAliasName.get()
+                keyPassword = releaseKeyPassword.get()
+            }
+        }
     }
 
     buildTypes {
         release {
             optimization {
                 enable = true
+            }
+            if (canSignRelease) {
+                signingConfig = signingConfigs.getByName("release")
             }
         }
     }
@@ -38,7 +66,7 @@ android {
 androidComponents {
     onVariants { variant ->
         variant.outputs.forEach { output ->
-            output.outputFileName.set("viva_la_circle.apk")
+            output.outputFileName.set("viva_la_control.apk")
         }
     }
 }

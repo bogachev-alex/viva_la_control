@@ -1,0 +1,140 @@
+# Ship a signed APK to Telegram and GitHub Releases on
+# https://github.com/bogachev-alex/viva_la_control
+#
+# Required Actions secrets (on viva_la_control):
+#   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+#   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD
+#   ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+#   DIST_REPO_TOKEN — only if this workflow runs in another repo;
+#     PAT with contents:write on bogachev-alex/viva_la_control.
+#
+# Telegram (once): @BotFather → /newbot → token.
+# Add the bot to the group, send a message, then open
+# https://api.telegram.org/bot<TOKEN>/getUpdates and copy chat.id.
+
+name: Ship APK
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: ship
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  ship:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check secrets
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          missing=0
+          for name in TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "Missing secret: $name"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Add the secrets in repo Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Resolve version
+        id: meta
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "version_name=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version_name=1.0.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version_code=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Decode keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/sideload.keystore"
+
+      - name: Build release APK
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/sideload.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease --no-daemon \
+            -PversionCode=${{ steps.meta.outputs.version_code }} \
+            -PversionName=${{ steps.meta.outputs.version_name }}
+
+      - name: Verify APK is signed
+        run: |
+          apk="app/build/outputs/apk/release/viva_la_control.apk"
+          test -f "$apk"
+          unzip -l "$apk" | grep -E 'META-INF/.*\.(RSA|EC|DSA)$'
+
+      - name: Write latest.json
+        env:
+          VERSION_NAME: ${{ steps.meta.outputs.version_name }}
+          VERSION_CODE: ${{ steps.meta.outputs.version_code }}
+        run: |
+          cat > latest.json <<EOF
+          {
+            "versionCode": ${VERSION_CODE},
+            "versionName": "${VERSION_NAME}",
+            "apkUrl": "https://github.com/bogachev-alex/viva_la_control/releases/download/v${VERSION_NAME}/viva_la_control.apk"
+          }
+          EOF
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: bogachev-alex/viva_la_control
+          tag_name: v${{ steps.meta.outputs.version_name }}
+          name: ${{ steps.meta.outputs.version_name }}
+          body: viva_la_control ${{ steps.meta.outputs.version_name }} (${{ steps.meta.outputs.version_code }}) ${{ steps.meta.outputs.short_sha }}
+          files: |
+            app/build/outputs/apk/release/viva_la_control.apk
+            latest.json
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.DIST_REPO_TOKEN || github.token }}
+
+      - name: Send APK to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          VERSION_NAME: ${{ steps.meta.outputs.version_name }}
+          VERSION_CODE: ${{ steps.meta.outputs.version_code }}
+          SHORT_SHA: ${{ steps.meta.outputs.short_sha }}
+        run: |
+          apk="app/build/outputs/apk/release/viva_la_control.apk"
+          caption="viva_la_control ${VERSION_NAME} (${VERSION_CODE}) ${SHORT_SHA}"$'\n'"https://github.com/bogachev-alex/viva_la_control/releases/tag/v${VERSION_NAME}"
+          curl -sS -f -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument" \
+            -F "chat_id=${TELEGRAM_CHAT_ID}" \
+            -F "document=@${apk};filename=viva_la_control-${VERSION_NAME}.apk" \
+            -F "caption=${caption}"
